@@ -1,0 +1,82 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+# *.manifest
+# *.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# Environments
+.env # IMPORTANT: Ignore the actual .env file with secrets
+.venv
+env/
+venv/ # Standard name for virtual environment directory
+ENV/
+env.bak/
+venv.bak/
+
+# IDE specific files
+.idea/ # IntelliJ / PyCharm
+.vscode/ # Visual Studio Code
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw? # Vim swap files
+
+# OS specific files
+.DS_Store # macOS
+Thumbs.db # Windows
+
+# Output data files (optional - uncomment if you create a 'data' dir for outputs)
+# data/*.csv
+# data/*.json
+# data/*.xlsx
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints
+
+# Local settings files (if any)
+# local_settings.py

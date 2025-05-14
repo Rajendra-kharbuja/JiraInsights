@@ -19,15 +19,15 @@ This document tracks identified bugs, planned features, refactoring tasks, and o
 <!-- List main features to be built -->
 1.  **[High] [FEAT-001] Initial Project Structure Setup** (Target: Iteration 1)
     *   **Description:** Create the basic directory structure (`src`, `tests`), essential files (`main.py`, `config.py`, `requirements.txt`, `.gitignore`, `.env.example`), and all documentation templates (`README.md`, `PROJECT_PURPOSE.md`, `PROJECT_METRICS_SPECIFICATIONS.md`, `IMPROVEMENTS.md`, `GEMINI_MASTER_GUIDANCE.md`). Initialize Git repository.
-    *   **Acceptance Criteria:** Project can be cloned, basic structure exists, documentation templates are present. `requirements.txt` includes initial libraries (`python-dotenv`, `requests`, `pandas`, `pytest`).
+    *   **Acceptance Criteria:** Project can be cloned, basic structure exists, documentation templates are present. `requirements.txt` includes initial libraries. `.gitignore` is present.
     *   **Status:** Done (Iteration 1)
-    *   **Notes/Dependencies:** Initial project structure, configuration templates, and documentation files created. Foundational first step.
+    *   **Notes/Dependencies:** Initial project structure, configuration templates, `.gitignore`, and documentation files created. Foundational first step.
 
 2.  **[High] [FEAT-002] Implement Jira Connection & Authentication** (Target: Iteration 1)
-    *   **Description:** Create `src/jira_connector.py`. Implement a function/class that reads Jira URL, email, and API token from `.env` variables. Include a method to test the connection (e.g., by making a simple API call like `/rest/api/3/myself`). Handle basic connection errors gracefully (e.g., incorrect URL, invalid credentials).
-    *   **Acceptance Criteria:** Can successfully authenticate against a Jira instance using credentials from `.env`. Returns a clear success/failure indication. Logs informative errors on failure.
+    *   **Description:** Create `src/jira_connector.py`. Implement a function/class that reads Jira URL, email, and **password** from `.env` variables. Include a method to test the connection (e.g., by making a simple API call like `/rest/api/3/myself`) using Basic Authentication. Handle basic connection errors gracefully.
+    *   **Acceptance Criteria:** Can successfully authenticate against a Jira instance using credentials from `.env`. Returns a clear success/failure indication. Logs informative errors on failure. All unit tests pass.
     *   **Status:** Done (Iteration 1)
-    *   **Notes/Dependencies:** Implemented Jira connection using Basic Authentication (Email/Password from .env). Includes loading credentials and a test connection function. All unit tests pass.
+    *   **Notes/Dependencies:** Implemented Jira connection using Basic Authentication (Email/Password from .env). Includes loading credentials and a test connection function. All unit tests pass. Requires `.env` setup by the user.
 
 3.  **[High] [FEAT-003] Fetch Basic Issue Data via JQL** (Target: Iteration 2)
     *   **Description:** Extend `src/jira_connector.py`. Add a function that accepts a JQL string and fetches issues using the Jira search API (`/rest/api/3/search`). Initially fetch key fields required for Lead Time and Throughput (`id`, `key`, `fields.issuetype`, `fields.status`, `fields.created`, `fields.resolutiondate`). Implement handling for API pagination (`startAt`, `maxResults`) to retrieve all matching issues.
