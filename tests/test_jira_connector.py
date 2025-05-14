@@ -265,7 +265,7 @@ def test_fetch_issues_single_page_success(mock_load_credentials_call, requests_m
     assert requests_mock.last_request.qs['jql'][0].lower() == jql.lower() # Case-insensitive comparison
     assert requests_mock.last_request.qs['fields'] == [expected_fields_str]
     assert requests_mock.last_request.qs['startat'] == ['0'] # qs values are lists of strings
-    assert "Successfully fetched a total of 2 issues." in caplog.text
+    assert f"JQL search and processing completed. Returning {len(issues)} issues." in caplog.text # NEW
 
 
 @patch('src.jira_connector.load_credentials')
@@ -311,7 +311,7 @@ def test_fetch_issues_multiple_pages_success(mock_load_credentials_call, request
     assert requests_mock.call_count == 2
     history = requests_mock.request_history
     assert history[1].qs['startat'] == [str(internal_max_results_per_page)]
-    assert f"Successfully fetched a total of {internal_max_results_per_page + 1} issues." in caplog.text
+    assert f"JQL search and processing completed. Returning {len(issues)} issues." in caplog.text # NEW
 
 
 @patch('src.jira_connector.load_credentials')
@@ -326,7 +326,7 @@ def test_fetch_issues_empty_result(mock_load_credentials_call, requests_mock, ca
     issues = jira_connector.fetch_issues_by_jql(jql)
 
     assert issues == []
-    assert "Successfully fetched a total of 0 issues." in caplog.text
+    assert f"JQL search and processing completed. Returning {len(issues)} issues." in caplog.text # NEW
 
 
 @patch('src.jira_connector.load_credentials')
@@ -408,7 +408,9 @@ def test_fetch_issues_pagination_stops_at_max_issues(mock_load_credentials_call,
     assert issues[0]["id"] == "1"
     assert issues[1]["id"] == "2"
     assert issues[2]["id"] == "3" 
-    assert f"Reached configured max_issues_to_fetch ({limit})" in caplog.text
+    assert f"Reached/exceeded configured max_issues_to_fetch ({limit}). Stopping pagination." in caplog.text # NEW - checks the stopping condition log
+    assert f"Returning final {limit} issues after applying max_issues_to_fetch limit." in caplog.text # NEW - checks the slicing log
+    assert f"JQL search and processing completed. Returning {limit} issues." in caplog.text # NEW - checks the final output log
     assert requests_mock.call_count == 2 # Fetches page 1 (2 issues), then page 2 (2 issues), then slices to 3.
 
 
@@ -457,3 +459,243 @@ def test_fetch_issues_no_credentials(mock_load_credentials_call, caplog):
     assert "Initiating JQL search" not in caplog.text
     # Verify that load_credentials was called
     mock_load_credentials_call.assert_called_once()
+# --- Tests for _parse_status_transitions ---
+
+def test_parse_status_transitions_empty_or_none_changelog():
+    """Test with None or empty changelog data."""
+    assert jira_connector._parse_status_transitions(None) == []
+    assert jira_connector._parse_status_transitions({}) == []
+    assert jira_connector._parse_status_transitions({"histories": []}) == []
+
+def test_parse_status_transitions_no_status_changes():
+    """Test changelog with histories but no actual status change items."""
+    changelog_data = {
+        "histories": [
+            {
+                "created": "2023-01-01T10:00:00.000+0000",
+                "items": [{"field": "assignee", "fromString": "UserA", "toString": "UserB"}]
+            }
+        ]
+    }
+    assert jira_connector._parse_status_transitions(changelog_data) == []
+
+def test_parse_status_transitions_single_status_change():
+    """Test a single valid status change."""
+    changelog_data = {
+        "histories": [
+            {
+                "created": "2023-01-01T12:00:00.000+0000",
+                "items": [
+                    {"fieldId": "status", "fromString": "Open", "toString": "In Progress"}
+                ]
+            }
+        ]
+    }
+    expected = [{
+        "timestamp": "2023-01-01T12:00:00.000+0000",
+        "from_status": "Open",
+        "to_status": "In Progress"
+    }]
+    assert jira_connector._parse_status_transitions(changelog_data) == expected
+
+def test_parse_status_transitions_multiple_status_changes_sorted():
+    """Test multiple status changes, ensuring they are sorted by timestamp."""
+    changelog_data = {
+        "histories": [
+            { # Later change
+                "created": "2023-01-01T14:00:00.000+0000",
+                "items": [{"fieldId": "status", "fromString": "In Progress", "toString": "Resolved"}]
+            },
+            { # Earlier change
+                "created": "2023-01-01T12:00:00.000+0000",
+                "items": [{"fieldId": "status", "fromString": "Open", "toString": "In Progress"}]
+            }
+        ]
+    }
+    expected = [
+        {"timestamp": "2023-01-01T12:00:00.000+0000", "from_status": "Open", "to_status": "In Progress"},
+        {"timestamp": "2023-01-01T14:00:00.000+0000", "from_status": "In Progress", "to_status": "Resolved"}
+    ]
+    assert jira_connector._parse_status_transitions(changelog_data) == expected
+
+def test_parse_status_transitions_initial_creation_from_none():
+    """Test initial status where fromString might be None."""
+    changelog_data = {
+        "histories": [
+            {
+                "created": "2023-01-01T10:00:00.000+0000", # Issue creation event itself
+                "items": [{"fieldId": "status", "fromString": None, "toString": "Backlog"}]
+            }
+        ]
+    }
+    expected = [{
+        "timestamp": "2023-01-01T10:00:00.000+0000",
+        "from_status": None, # Expecting None, not the string "None"
+        "to_status": "Backlog"
+    }]
+    parsed = jira_connector._parse_status_transitions(changelog_data)
+    assert parsed == expected
+    assert parsed[0]["from_status"] is None
+
+
+def test_parse_status_transitions_mixed_items():
+    """Test changelog with status changes and other field changes."""
+    changelog_data = {
+        "histories": [
+            {
+                "created": "2023-01-01T12:00:00.000+0000",
+                "items": [
+                    {"fieldId": "assignee", "fromString": None, "toString": "UserA"},
+                    {"fieldId": "status", "fromString": "Open", "toString": "In Progress"}
+                ]
+            }
+        ]
+    }
+    expected = [{
+        "timestamp": "2023-01-01T12:00:00.000+0000",
+        "from_status": "Open",
+        "to_status": "In Progress"
+    }]
+    assert jira_connector._parse_status_transitions(changelog_data) == expected
+
+
+def test_parse_status_transitions_field_attribute():
+    """Test parsing when fieldId is not 'status' but field is 'status' (case-insensitive)."""
+    # This is less common for 'status' but good to cover if 'field' name is used
+    changelog_data = {
+        "histories": [
+            {
+                "created": "2023-01-01T12:00:00.000+0000",
+                "items": [
+                    {"field": "Status", "fieldId": "customfield_10001", "fromString": "Open", "toString": "In Progress"}
+                ]
+            }
+        ]
+    }
+    # Note: Current _parse_status_transitions primarily checks fieldId == "status".
+    # If we wanted to support field == "Status", the parser logic would need adjustment.
+    # For now, this test will expect an empty list based on current parser.
+    # If parser is updated to also check item.get("field","").lower() == "status", this test would change.
+    assert jira_connector._parse_status_transitions(changelog_data) == [] # Based on current parser
+
+    # If parser was updated to check field name:
+    # changelog_data_field_name = {
+    #     "histories": [
+    #         {
+    #             "created": "2023-01-01T12:00:00.000+0000",
+    #             "items": [
+    #                 {"field": "status", "fromString": "Open", "toString": "In Progress"} # No fieldId
+    #             ]
+    #         }
+    #     ]
+    # }
+    # expected = [{"timestamp": "2023-01-01T12:00:00.000+0000", "from_status": "Open", "to_status": "In Progress"}]
+    # assert jira_connector._parse_status_transitions(changelog_data_field_name) == expected
+
+def test_parse_status_transitions_missing_tostring_is_skipped(caplog):
+    """Test that a status change item missing 'toString' is skipped."""
+    changelog_data = {
+        "histories": [
+            {
+                "created": "2023-01-01T12:00:00.000+0000",
+                "items": [
+                    {"fieldId": "status", "fromString": "Open", "toString": None} # Missing to_status
+                ]
+            }
+        ]
+    }
+    caplog.set_level(logging.DEBUG)
+    assert jira_connector._parse_status_transitions(changelog_data) == []
+    assert "missing 'toString'" in caplog.text
+
+
+# --- Modified Tests for fetch_issues_by_jql to include changelog ---
+
+@patch('src.jira_connector._parse_status_transitions') # Mock the parser for some tests
+@patch('src.jira_connector.load_credentials')
+def test_fetch_issues_includes_changelog_data_and_parses(mock_load_credentials_call, mock_parse_transitions, requests_mock, caplog):
+    """Test that fetch_issues_by_jql requests and processes changelog when include_changelog=True."""
+    mock_url = "https://test.jira.com"
+    mock_email = "user@test.com"
+    mock_password = "password"
+    mock_load_credentials_call.return_value = (mock_url, mock_email, mock_password)
+    jql = "project = CL_TEST"
+    search_url_matcher = f"{mock_url}{config.JIRA_API_SEARCH_PATH}"
+
+    # Mock API response including a changelog object
+    mock_api_response = {
+        "startAt": 0, "maxResults": 50, "total": 1,
+        "issues": [{
+            "id": "1", "key": "CL-1", "fields": {"summary": "Issue with changelog"},
+            "changelog": {"histories": [{"created": "2023-01-01", "items": [{"fieldId": "status"}]}]} # Dummy changelog
+        }]
+    }
+    # Mock what our parser would return
+    mock_parsed_transitions = [{"timestamp": "2023-01-01", "from_status": "A", "to_status": "B"}]
+    mock_parse_transitions.return_value = mock_parsed_transitions
+
+    requests_mock.get(search_url_matcher, json=mock_api_response, status_code=200)
+    caplog.set_level(logging.DEBUG)
+    
+    issues = jira_connector.fetch_issues_by_jql(jql, include_changelog=True)
+
+    assert issues is not None
+    assert len(issues) == 1
+    # Check that 'expand=changelog' was in the request parameters
+    assert requests_mock.called_once
+    assert requests_mock.last_request.qs['expand'] == ['changelog']
+    # Check that _parse_status_transitions was called with the changelog data
+    mock_parse_transitions.assert_called_once_with(mock_api_response["issues"][0]["changelog"])
+    # Check that the issue in the result has the parsed transitions
+    assert "status_transitions" in issues[0]
+    assert issues[0]["status_transitions"] == mock_parsed_transitions
+    # assert "Successfully fetched and processed changelogs" in caplog.text # This log was removed/changed
+    # Instead, check for a more generic processing log or specific debug logs if added
+    assert "Requesting page 1" in caplog.text # Confirms fetch logic ran
+    assert "JQL search and processing completed" in caplog.text
+
+
+@patch('src.jira_connector.load_credentials')
+def test_fetch_issues_no_changelog_if_false(mock_load_credentials_call, requests_mock, caplog):
+    """Test that changelog is not requested or processed if include_changelog=False."""
+    mock_load_credentials_call.return_value = ("https://test.jira.com", "user", "pass")
+    jql = "project = NO_CL"
+    search_url_matcher = f"https://test.jira.com{config.JIRA_API_SEARCH_PATH}"
+    mock_api_response = {"startAt": 0, "maxResults": 50, "total": 1, "issues": [{"id": "1", "key": "NO_CL-1"}]}
+    
+    requests_mock.get(search_url_matcher, json=mock_api_response, status_code=200)
+    caplog.set_level(logging.DEBUG)
+
+    issues = jira_connector.fetch_issues_by_jql(jql, include_changelog=False)
+
+    assert issues is not None
+    assert len(issues) == 1
+    assert requests_mock.called_once
+    assert 'expand' not in requests_mock.last_request.qs # expand should not be present
+    assert "status_transitions" in issues[0]
+    assert issues[0]["status_transitions"] == [] # Should have empty list
+    assert "Include changelog: False" in caplog.text
+
+
+@patch('src.jira_connector.load_credentials')
+def test_fetch_issues_handles_issue_without_changelog_field(mock_load_credentials_call, requests_mock, caplog):
+    """Test fetching when an issue unexpectedly has no 'changelog' field even if requested."""
+    mock_load_credentials_call.return_value = ("https://test.jira.com", "user", "pass")
+    jql = "project = MISSING_CL_FIELD"
+    search_url_matcher = f"https://test.jira.com{config.JIRA_API_SEARCH_PATH}"
+    
+    # API response for an issue that's missing the 'changelog' field entirely
+    mock_api_response = {
+        "startAt": 0, "maxResults": 50, "total": 1,
+        "issues": [{"id": "1", "key": "MISSING-1", "fields": {"summary": "No changelog field"}}] # 'changelog' key absent
+    }
+    requests_mock.get(search_url_matcher, json=mock_api_response, status_code=200)
+    caplog.set_level(logging.DEBUG)
+
+    issues = jira_connector.fetch_issues_by_jql(jql, include_changelog=True)
+
+    assert issues is not None
+    assert len(issues) == 1
+    assert "status_transitions" in issues[0]
+    assert issues[0]["status_transitions"] == [] # Expect empty list if changelog field is missing
+    assert requests_mock.last_request.qs['expand'] == ['changelog'] # expand was requested

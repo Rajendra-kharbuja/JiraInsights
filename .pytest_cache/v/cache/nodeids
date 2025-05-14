@@ -1,7 +1,10 @@
 [
   "tests/test_jira_connector.py::test_fetch_issues_empty_result",
+  "tests/test_jira_connector.py::test_fetch_issues_handles_issue_without_changelog_field",
   "tests/test_jira_connector.py::test_fetch_issues_http_error",
+  "tests/test_jira_connector.py::test_fetch_issues_includes_changelog_data_and_parses",
   "tests/test_jira_connector.py::test_fetch_issues_multiple_pages_success",
+  "tests/test_jira_connector.py::test_fetch_issues_no_changelog_if_false",
   "tests/test_jira_connector.py::test_fetch_issues_no_credentials",
   "tests/test_jira_connector.py::test_fetch_issues_pagination_stops_at_max_issues",
   "tests/test_jira_connector.py::test_fetch_issues_pagination_stops_if_page_empty",
@@ -18,5 +21,13 @@
   "tests/test_jira_connector.py::test_jira_connection_timeout",
   "tests/test_jira_connector.py::test_load_credentials_invalid_url",
   "tests/test_jira_connector.py::test_load_credentials_missing_var",
-  "tests/test_jira_connector.py::test_load_credentials_success"
+  "tests/test_jira_connector.py::test_load_credentials_success",
+  "tests/test_jira_connector.py::test_parse_status_transitions_empty_or_none_changelog",
+  "tests/test_jira_connector.py::test_parse_status_transitions_field_attribute",
+  "tests/test_jira_connector.py::test_parse_status_transitions_initial_creation_from_none",
+  "tests/test_jira_connector.py::test_parse_status_transitions_missing_tostring_is_skipped",
+  "tests/test_jira_connector.py::test_parse_status_transitions_mixed_items",
+  "tests/test_jira_connector.py::test_parse_status_transitions_multiple_status_changes_sorted",
+  "tests/test_jira_connector.py::test_parse_status_transitions_no_status_changes",
+  "tests/test_jira_connector.py::test_parse_status_transitions_single_status_change"
 ]
