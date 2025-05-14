@@ -1,0 +1,13 @@
+[
+  "tests/test_jira_connector.py::test_jira_connection_auth_failure_401",
+  "tests/test_jira_connector.py::test_jira_connection_connection_error",
+  "tests/test_jira_connector.py::test_jira_connection_forbidden_403",
+  "tests/test_jira_connector.py::test_jira_connection_missing_credentials_prevents_call",
+  "tests/test_jira_connector.py::test_jira_connection_not_found_404",
+  "tests/test_jira_connector.py::test_jira_connection_server_error_500",
+  "tests/test_jira_connector.py::test_jira_connection_success",
+  "tests/test_jira_connector.py::test_jira_connection_timeout",
+  "tests/test_jira_connector.py::test_load_credentials_invalid_url",
+  "tests/test_jira_connector.py::test_load_credentials_missing_var",
+  "tests/test_jira_connector.py::test_load_credentials_success"
+]

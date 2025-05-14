@@ -1,0 +1,8 @@
+# Core libraries
+python-dotenv>=1.0.0
+requests>=2.30.0
+pandas>=2.0.0
+
+# Testing libraries
+pytest>=7.0.0
+requests-mock>=1.10.0 # For mocking API calls in tests

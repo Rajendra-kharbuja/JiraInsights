@@ -11,7 +11,7 @@ For a detailed understanding of the project's goals, scope, and philosophy, plea
 
 ## 2. Features (Current / Planned for MVP)
 <!-- List key features. Align with "In Scope" from PROJECT_PURPOSE.md -->
-*   **Jira Connectivity:** Securely connect to Jira Cloud or Server using API tokens loaded from `.env`.
+*   **Jira Connectivity:** Securely connect to Jira Cloud or Server using Jira Basic Authentication (Email/Password) loaded from `.env`.
 *   **Configurable Scope:** Specify target Jira projects and/or board IDs via configuration (`config.py`) or command-line arguments.
 *   **Data Fetching:** Retrieve essential issue data including status transitions (changelog) and sprint details using JQL. Handles API pagination.
 *   **Cycle Time Calculation:** Determine the time taken for issues to move between user-configurable workflow stages (defined in `config.py`).
@@ -39,9 +39,8 @@ For a detailed understanding of the project's goals, scope, and philosophy, plea
 *   Python 3.9+
 *   `pip` and `virtualenv` (recommended)
 *   Jira Instance Access (Cloud or Server)
-*   Jira API Token:
-    *   Generate an API Token from your Atlassian Account settings: [https://support.atlassian.com/atlassian-account/docs/manage-api-tokens-for-your-atlassian-account/](https://support.atlassian.com/atlassian-account/docs/manage-api-tokens-for-your-atlassian-account/)
-    *   You will need your Jira URL (e.g., `https://your-domain.atlassian.net`), the email associated with the token, and the token itself. Store these in a `.env` file.
+*   Jira Password: Your Jira account password. Note: Using passwords directly is less secure than API tokens.
+    *   You will need your Jira URL (e.g., `https://your-domain.atlassian.net`), your Jira login email, and your Jira password. Store these in a `.env` file.
 
 ### Installation
 1.  Clone the repository:
@@ -66,7 +65,7 @@ For a detailed understanding of the project's goals, scope, and philosophy, plea
         ```dotenv
         JIRA_URL=https://your-domain.atlassian.net
         JIRA_EMAIL=your-email@example.com
-        JIRA_API_TOKEN=your_api_token_here
+        JIRA_PASSWORD=your_actual_password_here
         ```
     *   Refer to `config.py` for other non-sensitive configuration settings.
 
@@ -169,5 +168,7 @@ See [`IMPROVEMENTS.md`](IMPROVEMENTS.md) for a detailed, prioritized list.
 ## 9. Disclaimer
 
 This tool provides insights based on data extracted from Jira. The accuracy of the insights depends heavily on the accuracy and consistency of the data within Jira (e.g., timely status updates) and the correct configuration of the tool (e.g., status mappings in [`config.py`](config.py)). Use the results to inform discussions, identify areas for investigation, and track trends, not as absolute, infallible measures of performance. Ensure compliance with your organization's data access policies when configuring and using this tool.
+
+**Warning:** Using Basic Authentication with your primary Jira password may pose security risks and might be deprecated by Atlassian in the future. API Tokens are the recommended approach where possible.
 
 ---
