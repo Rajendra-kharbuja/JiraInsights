@@ -31,13 +31,13 @@ This document tracks identified bugs, planned features, refactoring tasks, and o
 
 3.  **[High] [FEAT-003] Fetch Basic Issue Data via JQL** (Target: Iteration 2)
     *   **Description:** Extend `src/jira_connector.py`. Add a function that accepts a JQL string and fetches issues using the Jira search API (`/rest/api/3/search`). Initially fetch key fields required for Lead Time and Throughput (`id`, `key`, `fields.issuetype`, `fields.status`, `fields.created`, `fields.resolutiondate`). Implement handling for API pagination (`startAt`, `maxResults`) to retrieve all matching issues.
-    *   **Acceptance Criteria:** Can retrieve a list of issues matching a provided JQL query. Pagination correctly fetches all results. Returns structured data (e.g., list of dicts or ideally a pandas DataFrame). Handles potential API errors during search.
-    *   **Status:** To Do
-    *   **Notes/Dependencies:** FEAT-002. The JQL query itself will likely be constructed in `main.py` based on config/args.
+    *   **Acceptance Criteria:** Can retrieve a list of issues matching a provided JQL query. Pagination correctly fetches all results. Returns structured data (e.g., list of dicts). Handles potential API errors during search. All unit tests pass.
+    *   **Status:** Done (Iteration 2)
+    *   **Notes/Dependencies:** Implemented function to fetch Jira issues by JQL, handling pagination and field selection. Default fields fetched: id, key, issuetype, status, created, resolutiondate. FEAT-002.
 
 4.  **[High] [FEAT-004] Fetch Issue Changelog (Status Transitions)** (Target: Iteration 2)
     *   **Description:** Modify the issue fetching function (FEAT-003) in `src/jira_connector.py` to include the `changelog` in the `expand` parameter of the search API call. Add parsing logic (potentially in `data_processor.py` or a helper function) to extract relevant status transitions (timestamp, fromStatus, toStatus) from the nested changelog data for each issue.
-    *   **Acceptance Criteria:** Fetched issue data (e.g., DataFrame) includes easily accessible status transition history for each issue.
+    *   **Acceptance Criteria:** Fetched issue data (e.g., list of dicts or DataFrame) includes easily accessible status transition history for each issue.
     *   **Status:** To Do
     *   **Notes/Dependencies:** FEAT-003. Increases API response size and parsing complexity. Crucial for Cycle Time.
 
@@ -110,6 +110,7 @@ This document tracks identified bugs, planned features, refactoring tasks, and o
 1.  **[Medium] [DOC-001] Detail Data Fields & Metrics in `PROJECT_METRICS_SPECIFICATIONS.md`** (Target: Iterations 2-4)
     *   **Details:** As data fetching (FEAT-003, FEAT-004) and metric calculation (FEAT-005, FEAT-006, FEAT-007) are implemented, accurately document the specific Jira fields being used, how metrics are calculated, and required configurations in `PROJECT_METRICS_SPECIFICATIONS.md`. Ensure it stays synchronized with code and `config.py`.
     *   **Status:** To Do
+    *   **Notes:** FEAT-003 has updated the default fields fetched.
 
 2.  **[Medium] [DOC-002] Add Detailed Usage Instructions to `README.md`** (Target: Iteration 5)
     *   **Details:** Once the CLI (ENH-002) is implemented, provide clear examples in `README.md` showing how to run the tool with different options (projects, dates, output). Explain the output formats.

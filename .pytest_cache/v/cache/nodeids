@@ -1,4 +1,13 @@
 [
+  "tests/test_jira_connector.py::test_fetch_issues_empty_result",
+  "tests/test_jira_connector.py::test_fetch_issues_http_error",
+  "tests/test_jira_connector.py::test_fetch_issues_multiple_pages_success",
+  "tests/test_jira_connector.py::test_fetch_issues_no_credentials",
+  "tests/test_jira_connector.py::test_fetch_issues_pagination_stops_at_max_issues",
+  "tests/test_jira_connector.py::test_fetch_issues_pagination_stops_if_page_empty",
+  "tests/test_jira_connector.py::test_fetch_issues_request_exception",
+  "tests/test_jira_connector.py::test_fetch_issues_single_page_success",
+  "tests/test_jira_connector.py::test_fetch_issues_with_custom_fields",
   "tests/test_jira_connector.py::test_jira_connection_auth_failure_401",
   "tests/test_jira_connector.py::test_jira_connection_connection_error",
   "tests/test_jira_connector.py::test_jira_connection_forbidden_403",

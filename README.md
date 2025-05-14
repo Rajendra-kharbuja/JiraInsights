@@ -5,19 +5,20 @@ A Python tool to fetch and analyze Jira data for Scrum Masters to gain insights 
 
 ## 1. Overview
 <!-- Expand slightly on the project's purpose and what it does. Reference PROJECT_PURPOSE.md -->
-**Jira Insights** is a Python application designed to **automate the collection and analysis of data from Jira projects and boards**. It addresses the challenge faced by Scrum Masters managing multiple teams (potentially mixed Scrum/Kanban) of manually gathering data to understand progress, identify bottlenecks, and track improvements. It achieves this by connecting to the Jira API using Basic Authentication (Email/Password), fetching relevant ticket and sprint information using JQL, calculating key agile metrics (like Cycle Time, Lead Time, Throughput), and providing structured output for analysis.
+**Jira Insights** is a Python application designed to **automate the collection and analysis of data from Jira projects and boards**. It addresses the challenge faced by Scrum Masters managing multiple teams (potentially mixed Scrum/Kanban) of manually gathering data to understand progress, identify bottlenecks, and track improvements. It achieves this by connecting to the Jira API using Basic Authentication (Email/Password), fetching relevant ticket information (like ID, key, type, status, created/resolved dates by default) via JQL with pagination, and (in future steps) calculating key agile metrics and providing structured output.
 
 For a detailed understanding of the project's goals, scope, and philosophy, please see `PROJECT_PURPOSE.md`.
 
 ## 2. Features (Current / Planned for MVP)
 <!-- List key features. Align with "In Scope" from PROJECT_PURPOSE.md -->
 *   **Jira Connectivity:** Securely connect to Jira Cloud or Server using Jira Basic Authentication (Email/Password loaded from `.env`).
-*   **Configurable Scope:** Specify target Jira projects and/or boards via configuration (`config.py`) or command-line arguments (planned).
-*   **Data Fetching (Planned):** Retrieve essential issue data including status transitions (changelog) and sprint details using JQL. Handles API pagination.
+*   **Data Fetching:** Retrieve essential issue data (ID, key, type, status, created/resolved dates by default; other fields specifiable) from Jira via JQL queries, with robust pagination handling.
+*   **Configurable Scope (Planned):** Specify target Jira projects and/or boards via configuration (`config.py`) or command-line arguments.
 *   **Cycle Time Calculation (Planned):** Determine the time taken for issues to move between user-configurable workflow stages (defined in `config.py`).
 *   **Lead Time Calculation (Planned):** Determine the total time from issue creation to resolution.
 *   **Throughput Calculation (Planned):** Measure the number of items completed per time period (e.g., weekly, monthly).
 *   **Basic Data Output (Planned):** Provide calculated metrics in accessible formats (e.g., console output, CSV/JSON files).
+*   *(Planned) Fetching issue changelog for status transitions (needed for Cycle Time).*
 *   *(Planned) Basic Work-In-Progress (WIP) calculation.*
 *   *(Planned) Generation of data points for Cumulative Flow Diagrams (CFD).*
 
@@ -25,13 +26,13 @@ For a detailed understanding of the project's goals, scope, and philosophy, plea
 <!-- Describe the main components and how they fit together. This will evolve. -->
 *   **Input:** Jira REST API, Configuration files (`config.py`, `.env`), Command-line arguments (planned).
 *   **Processing:**
-    *   `src/jira_connector.py`: Handles authentication (Basic Auth), API calls (fetching issues via JQL, boards, sprints), and pagination logic.
+    *   `src/jira_connector.py`: Handles authentication (Basic Auth), API calls (fetching issues via JQL, including pagination), and connection testing.
     *   `src/data_processor.py` (Planned): Cleans, transforms raw Jira data (likely using `pandas`). Calculates metrics (Cycle Time, Lead Time, Throughput, WIP) based on status transitions and dates, guided by `config.py` settings.
     *   `src/reporting.py` (Planned): Formats and outputs the calculated metrics and insights (e.g., to console, files).
     *   `main.py`: Main script to orchestrate the workflow (configure -> connect -> fetch -> process -> report). Parses arguments/config (planned).
-*   **Output:** Console logs, CSV or JSON files (planned) containing calculated metrics or data points for charts (like CFD).
+*   **Output:** Console logs (current), List of Dictionaries (from fetch function), CSV or JSON files (planned) containing calculated metrics or data points for charts (like CFD).
 *   **Configuration:** Core settings (API endpoints, metric definitions like cycle time start/end statuses, JQL fragments) managed via `config.py`. Sensitive credentials (Jira URL, Email, **Password**) managed via `.env`.
-*   **Key Technologies/Libraries:** Python 3.9+, `requests`, `pandas`, `python-dotenv`, `pytest`. Potentially `typer` or `argparse` for CLI.
+*   **Key Technologies/Libraries:** Python 3.9+, `requests`, `pandas` (planned for data_processor), `python-dotenv`, `pytest`, `requests-mock`. Potentially `typer` or `argparse` for CLI.
 
 ## 4. Getting Started
 
@@ -70,10 +71,12 @@ For a detailed understanding of the project's goals, scope, and philosophy, plea
 ### Running the Application
 <!-- How to run the main part of the project -->
 ```bash
-# Example command (will be refined as CLI develops)
-# python main.py --projects PROJ1,PROJ2 --output metrics.csv
-# Currently, you can test the Jira connection by running:
-# python src/jira_connector.py (if the __main__ block is present and .env is set up)
+# To test Jira connection and basic issue fetching (edit JQL in the script for your instance):
+# Ensure .env is set up, then run from the project root:
+# python src/jira_connector.py
+
+# Full application execution via main.py (will be developed further):
+# python main.py --jql "project = ABC AND status = Done" --output metrics.csv (example)
 ```
 ### Running Tests
 ```bash
@@ -134,14 +137,14 @@ jira-insights/
 *   **Core Libraries:**
     *   `python-dotenv` (for environment variable management)
     *   `requests` (for Jira API communication)
-    *   `pandas` (for data manipulation and analysis - planned)
+    *   `pandas` (planned for data processing)
 *   **Testing:** `pytest`, `requests-mock`
 *   **CLI (Potential):** `argparse` or `typer`
 
 ## 8. Future Roadmap (High-Level)
 <!-- Link to or summarize items from IMPROVEMENTS.md tagged as major features -->
-*   Fetching and processing actual Jira issue data (JQL, changelogs).
-*   Calculation of core agile metrics (Cycle Time, Lead Time, Throughput).
+*   Fetching issue changelog for detailed status transition analysis (Cycle Time).
+*   Calculation of core agile metrics (Lead Time, Throughput, Cycle Time).
 *   Generation of data suitable for visualization (e.g., CFD, Control Charts).
 
 See `IMPROVEMENTS.md` for a detailed, prioritized list.

@@ -227,3 +227,233 @@ def test_jira_connection_missing_credentials_prevents_call(mock_load_credentials
 
     assert result is False
     assert "Attempting to connect to Jira" not in caplog.text
+# --- Tests for fetch_issues_by_jql ---
+
+@patch('src.jira_connector.load_credentials')
+def test_fetch_issues_single_page_success(mock_load_credentials_call, requests_mock, caplog):
+    """Test fetching issues that fit on a single page."""
+    mock_url = "https://test.jira.com"
+    mock_email = "user@test.com"
+    mock_password = "password"
+    mock_load_credentials_call.return_value = (mock_url, mock_email, mock_password)
+
+    jql = "project = TEST"
+    expected_fields_str = "id,key,issuetype,status,created,resolutiondate" # Default fields
+    search_url_matcher = f"{mock_url}{config.JIRA_API_SEARCH_PATH}"
+
+    mock_response = {
+        "startAt": 0,
+        "maxResults": 50,
+        "total": 2,
+        "issues": [
+            {"id": "1", "key": "TEST-1", "fields": {"summary": "Issue 1"}},
+            {"id": "2", "key": "TEST-2", "fields": {"summary": "Issue 2"}},
+        ]
+    }
+    requests_mock.get(search_url_matcher, json=mock_response, status_code=200)
+    caplog.set_level(logging.INFO)
+    issues = jira_connector.fetch_issues_by_jql(jql)
+
+    assert issues is not None
+    assert len(issues) == 2
+    assert issues[0]["key"] == "TEST-1"
+    assert requests_mock.called_once
+    
+    # Debug print to see exactly what requests_mock captured
+    print(f"DEBUG: Captured Query String from requests_mock: {requests_mock.last_request.qs}")
+
+    assert requests_mock.last_request.qs['jql'][0].lower() == jql.lower() # Case-insensitive comparison
+    assert requests_mock.last_request.qs['fields'] == [expected_fields_str]
+    assert requests_mock.last_request.qs['startat'] == ['0'] # qs values are lists of strings
+    assert "Successfully fetched a total of 2 issues." in caplog.text
+
+
+@patch('src.jira_connector.load_credentials')
+def test_fetch_issues_multiple_pages_success(mock_load_credentials_call, requests_mock, caplog):
+    """Test fetching issues that span multiple pages."""
+    mock_url = "https://test.jira.com"
+    mock_email = "user@test.com"
+    mock_password = "password"
+    mock_load_credentials_call.return_value = (mock_url, mock_email, mock_password)
+
+    jql = "project = MULTI"
+    search_url_matcher = f"{mock_url}{config.JIRA_API_SEARCH_PATH}"
+    # Try to get the default max_results_per_page from the function, otherwise assume 50
+    # This is a bit fragile as __defaults__ can be None if no defaults are set or if it's a builtin.
+    # For fetch_issues_by_jql, 'fields' is the first default, 'max_issues_to_fetch' is the second.
+    # The actual max_results_per_page is hardcoded to 50 inside the function for now.
+    # So, for this test, we'll use the internally hardcoded value for consistency in calculation.
+    internal_max_results_per_page = 50
+
+
+    # Page 1: max_results_per_page items
+    mock_response_p1 = {
+        "startAt": 0, "maxResults": internal_max_results_per_page, "total": internal_max_results_per_page + 1,
+        "issues": [{"id": str(i), "key": f"MULTI-{i}"} for i in range(1, internal_max_results_per_page + 1)]
+    }
+    # Page 2: 1 item
+    mock_response_p2 = {
+        "startAt": internal_max_results_per_page, "maxResults": internal_max_results_per_page, "total": internal_max_results_per_page + 1,
+        "issues": [{"id": str(internal_max_results_per_page + 1), "key": f"MULTI-{internal_max_results_per_page + 1}"}]
+    }
+
+    requests_mock.get(search_url_matcher, [
+        {'json': mock_response_p1, 'status_code': 200},
+        {'json': mock_response_p2, 'status_code': 200},
+    ])
+    caplog.set_level(logging.INFO)
+    issues = jira_connector.fetch_issues_by_jql(jql, max_issues_to_fetch=None)
+
+    assert issues is not None
+    assert len(issues) == internal_max_results_per_page + 1
+    assert issues[0]["key"] == "MULTI-1"
+    assert issues[-1]["key"] == f"MULTI-{internal_max_results_per_page + 1}"
+    assert requests_mock.call_count == 2
+    history = requests_mock.request_history
+    assert history[1].qs['startat'] == [str(internal_max_results_per_page)]
+    assert f"Successfully fetched a total of {internal_max_results_per_page + 1} issues." in caplog.text
+
+
+@patch('src.jira_connector.load_credentials')
+def test_fetch_issues_empty_result(mock_load_credentials_call, requests_mock, caplog):
+    """Test fetching when JQL returns no issues."""
+    mock_load_credentials_call.return_value = ("https://test.jira.com", "user", "pass")
+    jql = "status = Empty"
+    mock_response = {"startAt": 0, "maxResults": 50, "total": 0, "issues": []}
+    requests_mock.get(f"https://test.jira.com{config.JIRA_API_SEARCH_PATH}", json=mock_response)
+    
+    caplog.set_level(logging.INFO)
+    issues = jira_connector.fetch_issues_by_jql(jql)
+
+    assert issues == []
+    assert "Successfully fetched a total of 0 issues." in caplog.text
+
+
+@patch('src.jira_connector.load_credentials')
+def test_fetch_issues_with_custom_fields(mock_load_credentials_call, requests_mock):
+    """Test fetching with a custom list of fields."""
+    mock_load_credentials_call.return_value = ("https://test.jira.com", "user", "pass")
+    jql = "project = CUSTOM"
+    custom_fields = ["summary", "assignee", "reporter"]
+    custom_fields_str = "summary,assignee,reporter"
+    
+    mock_response = {"startAt": 0, "maxResults": 50, "total": 1, "issues": [{"key": "CUSTOM-1"}]}
+    requests_mock.get(f"https://test.jira.com{config.JIRA_API_SEARCH_PATH}", json=mock_response)
+
+    jira_connector.fetch_issues_by_jql(jql, fields=custom_fields)
+
+    assert requests_mock.called_once
+    assert requests_mock.last_request.qs['fields'] == [custom_fields_str]
+
+
+@patch('src.jira_connector.load_credentials')
+def test_fetch_issues_http_error(mock_load_credentials_call, requests_mock, caplog):
+    """Test handling of HTTP error during JQL search."""
+    mock_load_credentials_call.return_value = ("https://test.jira.com", "user", "pass")
+    jql = "project = ERROR"
+    requests_mock.get(f"https://test.jira.com{config.JIRA_API_SEARCH_PATH}", status_code=400, text="Bad JQL")
+
+    caplog.set_level(logging.ERROR)
+    issues = jira_connector.fetch_issues_by_jql(jql)
+
+    assert issues is None
+    assert "HTTP Error during JQL search" in caplog.text
+    assert "400 - Bad JQL" in caplog.text
+
+
+@patch('src.jira_connector.load_credentials')
+def test_fetch_issues_request_exception(mock_load_credentials_call, requests_mock, caplog):
+    """Test handling of a generic RequestException."""
+    mock_load_credentials_call.return_value = ("https://test.jira.com", "user", "pass")
+    jql = "project = CONN_ERROR"
+    requests_mock.get(f"https://test.jira.com{config.JIRA_API_SEARCH_PATH}", exc=requests.exceptions.ConnectionError("Network down"))
+
+    caplog.set_level(logging.ERROR)
+    issues = jira_connector.fetch_issues_by_jql(jql)
+
+    assert issues is None
+    assert "Request Exception during JQL search" in caplog.text
+    assert "Network down" in caplog.text
+
+
+@patch('src.jira_connector.load_credentials')
+def test_fetch_issues_pagination_stops_at_max_issues(mock_load_credentials_call, requests_mock, caplog):
+    """Test that pagination stops when max_issues_to_fetch is reached."""
+    mock_load_credentials_call.return_value = ("https://test.jira.com", "user", "pass")
+    jql = "project = LIMIT"
+    search_url_matcher = f"https://test.jira.com{config.JIRA_API_SEARCH_PATH}"
+    limit = 3
+    internal_max_results_per_page = 2 # To force pagination and test slicing
+
+    # Page 1
+    mock_response_p1 = {
+        "startAt": 0, "maxResults": internal_max_results_per_page, "total": 10,
+        "issues": [{"id": "1"}, {"id": "2"}]
+    }
+    # Page 2 (server returns 2, but we only need 1 more to reach limit of 3)
+    mock_response_p2 = {
+        "startAt": internal_max_results_per_page, "maxResults": internal_max_results_per_page, "total": 10,
+        "issues": [{"id": "3"}, {"id": "4"}] 
+    }
+    
+    requests_mock.get(search_url_matcher, [
+        {'json': mock_response_p1, 'status_code': 200},
+        {'json': mock_response_p2, 'status_code': 200} 
+    ])
+    caplog.set_level(logging.INFO)
+    issues = jira_connector.fetch_issues_by_jql(jql, max_issues_to_fetch=limit)
+
+    assert issues is not None
+    assert len(issues) == limit
+    assert issues[0]["id"] == "1"
+    assert issues[1]["id"] == "2"
+    assert issues[2]["id"] == "3" 
+    assert f"Reached configured max_issues_to_fetch ({limit})" in caplog.text
+    assert requests_mock.call_count == 2 # Fetches page 1 (2 issues), then page 2 (2 issues), then slices to 3.
+
+
+@patch('src.jira_connector.load_credentials')
+def test_fetch_issues_pagination_stops_if_page_empty(mock_load_credentials_call, requests_mock, caplog):
+    """Test pagination stops if a page returns no issues, even if total suggests more."""
+    mock_load_credentials_call.return_value = ("https://test.jira.com", "user", "pass")
+    jql = "project = EMPTY_PAGE"
+    search_url_matcher = f"https://test.jira.com{config.JIRA_API_SEARCH_PATH}"
+    internal_max_results_per_page = 2
+
+    mock_response_p1 = {
+        "startAt": 0, "maxResults": internal_max_results_per_page, "total": 10, # Server says 10 total
+        "issues": [{"id": "1"}, {"id": "2"}]
+    }
+    mock_response_p2 = { # This page is unexpectedly empty
+        "startAt": internal_max_results_per_page, "maxResults": internal_max_results_per_page, "total": 10,
+        "issues": []
+    }
+    requests_mock.get(search_url_matcher, [
+        {'json': mock_response_p1, 'status_code': 200},
+        {'json': mock_response_p2, 'status_code': 200},
+    ])
+    caplog.set_level(logging.INFO)
+    issues = jira_connector.fetch_issues_by_jql(jql)
+
+    assert issues is not None
+    assert len(issues) == 2 # Only issues from the first page
+    assert "No more issues returned on current page. Pagination complete." in caplog.text
+    assert requests_mock.call_count == 2
+
+
+@patch('src.jira_connector.load_credentials')
+def test_fetch_issues_no_credentials(mock_load_credentials_call, caplog):
+    """Test fetch_issues_by_jql when load_credentials returns None."""
+    mock_load_credentials_call.return_value = None 
+    jql = "project = TEST"
+    
+    # load_credentials itself logs an error if it fails.
+    # We are checking that fetch_issues_by_jql doesn't proceed.
+    caplog.set_level(logging.INFO) # To check if "Initiating JQL search" is NOT logged
+    
+    issues = jira_connector.fetch_issues_by_jql(jql)
+
+    assert issues is None
+    assert "Initiating JQL search" not in caplog.text
+    # Verify that load_credentials was called
+    mock_load_credentials_call.assert_called_once()
