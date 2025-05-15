@@ -238,7 +238,7 @@ def test_fetch_issues_single_page_success(mock_load_credentials_call, requests_m
     mock_load_credentials_call.return_value = (mock_url, mock_email, mock_password)
 
     jql = "project = TEST"
-    expected_fields_str = "id,key,issuetype,status,created,resolutiondate" # Default fields
+    expected_fields_str = ",".join(config.DEFAULT_JIRA_FIELDS_TO_FETCH)
     search_url_matcher = f"{mock_url}{config.JIRA_API_SEARCH_PATH}"
 
     mock_response = {

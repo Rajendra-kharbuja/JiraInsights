@@ -5,7 +5,7 @@ A Python tool to fetch and analyze Jira data for Scrum Masters to gain insights 
 
 ## 1. Overview
 <!-- Expand slightly on the project's purpose and what it does. Reference PROJECT_PURPOSE.md -->
-**Jira Insights** is a Python application designed to **automate the collection and analysis of data from Jira projects and boards**. It addresses the challenge faced by Scrum Masters managing multiple teams by connecting to the Jira API using Basic Authentication, fetching relevant ticket information (including ID, key, type, status, created/resolved dates, and **issue changelog for status transition history**) via JQL with pagination. In future steps, it will calculate key agile metrics and provide structured output.
+**Jira Insights** is a Python application designed to **automate the collection and analysis of data from Jira projects and boards**. It addresses the challenge faced by Scrum Masters managing multiple teams by connecting to the Jira API using Basic Authentication, fetching relevant ticket information (including ID, key, type, status, created/resolved dates, and issue changelog for status transition history) via JQL with pagination. Configurations for workflow statuses crucial for these metrics are managed in `config.py`.
 
 For a detailed understanding of the project's goals, scope, and philosophy, please see `PROJECT_PURPOSE.md`.
 
@@ -13,26 +13,27 @@ For a detailed understanding of the project's goals, scope, and philosophy, plea
 <!-- List key features. Align with "In Scope" from PROJECT_PURPOSE.md -->
 *   **Jira Connectivity:** Securely connect to Jira Cloud or Server using Jira Basic Authentication (Email/Password loaded from `.env`).
 *   **Data Fetching:**
-    *   Retrieve essential issue data (ID, key, type, status, created/resolved dates by default; other fields specifiable) from Jira via JQL queries, with robust pagination handling.
-    *   Fetch issue **changelog** (via `expand=changelog` API parameter) and parse it to extract a chronologically sorted list of status transitions for each issue (stored under `status_transitions` key).
-*   **Configurable Scope (Planned):** Specify target Jira projects and/or boards via configuration (`config.py`) or command-line arguments.
-*   **Cycle Time Calculation (Planned):** Determine the time taken for issues to move between user-configurable workflow stages using the parsed `status_transitions`.
-*   **Lead Time Calculation (Planned):** Determine the total time from issue creation to resolution using fetched date fields.
-*   **Throughput Calculation (Planned):** Measure the number of items completed per time period.
-*   **Basic Data Output (Planned):** Provide calculated metrics in accessible formats.
-*   *(Planned) Basic Work-In-Progress (WIP) calculation.*
-*   *(Planned) Generation of data points for Cumulative Flow Diagrams (CFD).*
+    *   Retrieve essential issue data (default fields defined in `config.py`; other fields specifiable) from Jira via JQL queries, with robust pagination handling.
+    *   Fetch issue **changelog** and parse it to extract a chronologically sorted list of status transitions for each issue (stored under `status_transitions` key).
+*   **Configurable Workflow Statuses:** User-defined mappings in `config.py` for `CYCLE_START_STATUSES`, `CYCLE_END_STATUSES`, and `THROUGHPUT_DONE_STATUSES` to tailor metric calculations to specific Jira workflows.
+*   **Configurable Scope (Planned):** Specify target Jira projects and/or boards.
+*   **Cycle Time Calculation (Planned):** Using parsed `status_transitions` and configured statuses.
+*   **Lead Time Calculation (Planned):** Using fetched date fields.
+*   **Throughput Calculation (Planned):** Using fetched dates or configured 'done' statuses.
+*   **Basic Data Output (Planned).**
 
 ## 3. Core Building Blocks & Architecture (High-Level)
 <!-- Describe the main components and how they fit together. This will evolve. -->
 *   **Input:** Jira REST API, Configuration files (`config.py`, `.env`), Command-line arguments (planned).
 *   **Processing:**
-    *   `src/jira_connector.py`: Handles authentication (Basic Auth), API calls (fetching issues via JQL including pagination and `changelog` expansion), connection testing, and parsing of status transitions from the changelog.
-    *   `src/data_processor.py` (Planned): Cleans, transforms raw Jira data. Calculates metrics using fetched fields and `status_transitions`.
-    *   `src/reporting.py` (Planned): Formats and outputs calculated metrics.
-    *   `main.py`: Main script to orchestrate the workflow.
-*   **Output:** Console logs (current), List of Dictionaries (from fetch function, now including `status_transitions`), CSV or JSON files (planned).
-*   **Configuration:** Managed via `config.py` (non-sensitive) and `.env` (sensitive credentials).
+    *   `src/jira_connector.py`: Handles authentication, API calls (fetching issues, changelogs), and parsing of status transitions.
+    *   `src/data_processor.py` (Planned): Calculates metrics using fetched data and `config.py` status mappings.
+    *   `src/reporting.py` (Planned): Formats and outputs results.
+    *   `main.py`: Main script orchestrating the workflow.
+*   **Output:** Console logs, List of Dictionaries (from fetch function, including `status_transitions`), CSV/JSON files (planned).
+*   **Configuration:**
+    *   `.env`: For sensitive credentials (Jira URL, Email, Password).
+    *   `config.py`: For non-sensitive settings, API paths, default fetch fields, page size, and **crucially, user-defined Jira workflow status mappings** (e.g., `CYCLE_START_STATUSES`).
 *   **Key Technologies/Libraries:** Python 3.9+, `requests`, `pandas` (planned), `python-dotenv`, `pytest`, `requests-mock`.
 
 ## 4. Getting Started
@@ -40,24 +41,24 @@ For a detailed understanding of the project's goals, scope, and philosophy, plea
 ### Prerequisites
 *   Python 3.9+
 *   `pip` and `virtualenv` (recommended)
-*   Jira Instance Access (Cloud or Server)
-*   **Jira Password:** Your Jira account password. Stored in `.env` (ignored by Git).
+*   Jira Instance Access
+*   **Jira Password:** Your Jira account password.
 
 ### Installation
 1.  Clone repository.
-2.  Create and activate virtual environment: `python -m venv venv`, `source venv/bin/activate` (or `venv\Scripts\activate` on Windows).
+2.  Create/activate virtual environment: `python -m venv venv`, `source venv/bin/activate`.
 3.  Install dependencies: `pip install -r requirements.txt`.
-4.  Set up `.env` file (copy from `.env.example`):
-    ```dotenv
-    JIRA_URL=https://your-domain.atlassian.net
-    JIRA_EMAIL=your-email@example.com
-    JIRA_PASSWORD=your_actual_password_here
-    ```
+4.  **Set up Environment Variables:**
+    *   Create a `.env` file in the project root (copy from `.env.example`).
+    *   Fill in `JIRA_URL`, `JIRA_EMAIL`, `JIRA_PASSWORD`. This file is ignored by Git.
+5.  **Configure Workflow Statuses (Crucial for Metric Calculation):**
+    *   Edit `config.py`.
+    *   Update the `CYCLE_START_STATUSES`, `CYCLE_END_STATUSES`, and `THROUGHPUT_DONE_STATUSES` lists with the exact Jira status names used in your workflow(s). See comments in `config.py` for examples and guidance. This step is essential for accurate metric calculations later.
 
 ### Running the Application
 ```bash
 # To test Jira connection and issue/changelog fetching (edit JQL in the script for your instance):
-# Ensure .env is set up, then run from the project root:
+# Ensure .env and config.py are set up, then run from the project root:
 # python src/jira_connector.py
 
 # Full application execution via main.py (will be developed further).
@@ -70,7 +71,7 @@ python -m pytest
 
 ## 5. Development Workflow & Contribution Guidelines
 
-Strict Incremental Development Workflow is followed. Refer to `GEMINI_MASTER_GUIDANCE.md` Section II.1. Key steps: Identify Task -> Analyze -> Plan (Seek Approval) -> Implement -> Test -> Document Task Status -> Document Code Changes -> Commit.
+Strict Incremental Development Workflow is followed. Refer to `GEMINI_MASTER_GUIDANCE.md` Section II.1.
 
 Key Guidelines: Adhere to `GEMINI_MASTER_GUIDANCE.md`, PEP 8, Clarity, Modularity, Configuration-driven, Testing.
 
@@ -80,7 +81,7 @@ jira-insights/
 ├── .env                # Local environment variables (SECRET, DO NOT COMMIT)
 ├── .env.example        # Example environment variables
 ├── .gitignore          # Specifies intentionally untracked files
-├── config.py           # Project configurations, constants
+├── config.py           # Project configurations, constants, STATUS MAPPINGS
 ├── main.py             # Main application script
 ├── src/                # Core source code
 │   ├── __init__.py
@@ -108,11 +109,11 @@ jira-insights/
 
 ## 8. Future Roadmap (High-Level)
 
-*   Calculation of core agile metrics (Lead Time, Throughput, Cycle Time using fetched changelogs).
+*   Implementation of metric calculations (Lead Time, Throughput, Cycle Time) in `data_processor.py` using configured statuses.
 *   Command-line interface for flexible execution.
 *   See `IMPROVEMENTS.md` for details.
 
 ## 9. Disclaimer
 
-Accuracy depends on Jira data and tool configuration. Use for insights, not absolute measures.
-**Security Note:** Uses Basic Authentication (password in `.env`). Protect `.env` locally. API Tokens are generally more secure.
+Accuracy depends on Jira data and tool configuration (especially status mappings in `config.py`).
+**Security Note:** Uses Basic Authentication. Protect your `.env` file.

@@ -163,17 +163,15 @@ def fetch_issues_by_jql(
     jql_query: str,
     fields: Optional[List[str]] = None,
     max_issues_to_fetch: Optional[int] = None,
-    include_changelog: bool = True # New parameter to control changelog fetching
+    include_changelog: bool = True
 ) -> Optional[List[Dict[str, Any]]]:
     """
     Fetches issues from Jira based on a JQL query, handling pagination and optionally changelogs.
 
     Args:
         jql_query: The JQL query string.
-        fields: A list of Jira field names to retrieve (e.g., "summary", "assignee").
-                If None, defaults to a predefined set for core metrics:
-                ["id", "key", "issuetype", "status", "created", "resolutiondate"].
-                Note: 'id' and 'key' are usually top-level, others under 'fields' object in response.
+        fields: A list of Jira field names to retrieve.
+                If None, defaults to config.DEFAULT_JIRA_FIELDS_TO_FETCH.
         max_issues_to_fetch: An optional maximum number of issues to fetch.
                              If None, fetches all matching issues.
         include_changelog: If True, requests and parses the issue changelog for status transitions.
@@ -191,22 +189,26 @@ def fetch_issues_by_jql(
     search_url = f"{jira_url}{config.JIRA_API_SEARCH_PATH}"
 
     if fields is None:
-        fields = ["id", "key", "issuetype", "status", "created", "resolutiondate"]
+        # Use a mutable copy of the default list from config
+        fields_to_fetch = list(config.DEFAULT_JIRA_FIELDS_TO_FETCH)
+    else:
+        fields_to_fetch = list(fields) # Ensure it's a mutable copy if a list is passed
 
-    all_fetched_issues_raw: List[Dict[str, Any]] = [] # Stores raw issues from API
+    all_fetched_issues_raw: List[Dict[str, Any]] = []
     start_at = 0
-    max_results_per_page = 50 # Or from config.py: config.JIRA_MAX_RESULTS_PER_PAGE
+    # Use max results per page from config
+    max_results_per_page = config.JIRA_MAX_RESULTS_PER_PAGE
 
     logging.info(f"Initiating JQL search: \"{jql_query}\"")
-    logging.debug(f"Fields to retrieve: {', '.join(fields)}. Include changelog: {include_changelog}")
+    logging.debug(f"Fields to retrieve: {', '.join(fields_to_fetch)}. Include changelog: {include_changelog}")
 
     page_num = 1
     while True:
-        request_params: Dict[str, Any] = { # Use Any for params dict value type
+        request_params: Dict[str, Any] = {
             "jql": jql_query,
             "startAt": start_at,
             "maxResults": max_results_per_page,
-            "fields": ",".join(fields)
+            "fields": ",".join(fields_to_fetch) # Use the processed list of fields
         }
         if include_changelog:
             request_params["expand"] = "changelog" # Add expand parameter for changelog
