@@ -1,4 +1,4 @@
-# Gemini AI Assistant - Project "Jira Insights" - Master Guidance Document
+# Project "Jira Insights" - Master Guidance Document
 
 **Version:** 1.1
 **Last Updated:** 2024-03-10
