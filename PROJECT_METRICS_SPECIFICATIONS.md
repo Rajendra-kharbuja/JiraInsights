@@ -9,63 +9,56 @@ This document details the key data inputs, calculated metrics, and their interpr
 ### Data Source 1: Jira REST API
 *   **Description:** Primary source for all ticket information. Accessed via `src/jira_connector.py`.
 *   **Key Data Points Fetched (by `fetch_issues_by_jql`):**
-    *   **Default Fields (if `fields` argument is `None`, defined in `config.DEFAULT_JIRA_FIELDS_TO_FETCH`):**
-        *   `Issue ID` (Jira: `id`)
-        *   `Issue Key` (Jira: `key`)
-        *   `Summary` (Jira: `fields.summary`)
-        *   `Issue Type` (Jira: `fields.issuetype.name`)
-        *   `Status` (Jira: `fields.status.name`)
-        *   `Created Date` (Jira: `fields.created`)
-        *   `Resolution Date` (Jira: `fields.resolutiondate`, nullable)
-        *   `Project` (Jira: `fields.project` - object with key, name, etc.)
-        *   Other fields can be specified dynamically.
-    *   **Status Transition History (Changelog):**
-        *   Fetched when `include_changelog=True` (default) by `fetch_issues_by_jql`.
-        *   Parsed into a `status_transitions` key in each issue dictionary.
-        *   **Structure:** `List[Dict["timestamp": str (ISO 8601), "from_status": Optional[str], "to_status": str]]`, chronologically sorted.
-*   **Update Frequency:** Data is fetched on-demand.
+    *   **Default Fields (defined in `config.DEFAULT_JIRA_FIELDS_TO_FETCH`):** Includes `id`, `key`, `summary`, `issuetype`, `status`, `created`, `resolutiondate`, `project`. Other fields specifiable.
+    *   **Status Transition History (Changelog):** Fetched via `expand=changelog`. Parsed into `status_transitions` key in each issue dict (List of Dicts: `timestamp`, `from_status`, `to_status`), chronologically sorted.
+*   **Update Frequency:** On-demand.
 *   **Access Method:** Authenticated (Basic Auth) REST API GET requests to `/search` with JQL. Handles pagination and `expand=changelog`.
 
 ## II. Calculated Metrics / Indicators
 
-### Metric 1: Cycle Time (Planned)
-*   **Purpose:** Time an item spends actively being worked on.
-*   **Data Required:** Parsed `status_transitions`.
-*   **Configuration Required (in `config.py`):**
-    *   `CYCLE_START_STATUSES: list[str]` - List of Jira status names that define the start of the cycle.
-    *   `CYCLE_END_STATUSES: list[str]` - List of Jira status names that define the end of the cycle.
-*   **Calculation:** `Timestamp(Entered first CYCLE_END_STATUSES) - Timestamp(Entered first CYCLE_START_STATUSES)` for each issue, derived from its `status_transitions`.
-    *   Handled in `data_processor.py` (planned).
-*   **Interpretation:** (As previously defined)
+### Metric 1: Cycle Time
+*   **Purpose:** Measures active work time on an issue.
+*   **Data Required (from each issue dict):** `status_transitions`.
+*   **Configuration Required (in `config.py`):** `CYCLE_START_STATUSES`, `CYCLE_END_STATUSES`.
+*   **Calculation Logic (`src/data_processor.py` - `calculate_cycle_time`):**
+    1.  Identifies first transition *to* a `CYCLE_START_STATUSES` status (`start_time`).
+    2.  Identifies first subsequent transition *to* a `CYCLE_END_STATUSES` status (`end_time`).
+    3.  Cycle Time = `end_time - start_time`. Timestamps parsed as UTC.
+    4.  Returns `None` if a valid start/end pair is not found.
+*   **Output Unit:** Configurable (default "days", float). Stored in `issue['cycle_time']`, `issue['cycle_time_unit']`.
+*   **Interpretation:** Shorter indicates faster flow. Variability highlights inconsistencies.
 
-### Metric 2: Lead Time (Planned)
-*   **Purpose:** Total time from request to completion.
-*   **Data Required:** `Created Date` (`fields.created`), `Resolution Date` (`fields.resolutiondate`).
-*   **Calculation:** `Timestamp(Resolution Date) - Timestamp(Created Date)`.
-    *   Handled in `data_processor.py` (planned).
-*   **Interpretation:** (As previously defined)
+### Metric 2: Lead Time
+*   **Purpose:** Total time from issue creation to resolution.
+*   **Data Required (from each issue dict, via `fields` object):**
+    *   `created` (Jira: `fields.created`)
+    *   `resolutiondate` (Jira: `fields.resolutiondate`, nullable)
+*   **Calculation Logic (`src/data_processor.py` - `calculate_lead_time`):**
+    1.  Parses `created` and `resolutiondate` timestamps into UTC datetime objects.
+    2.  Lead Time = `resolved_datetime - created_datetime`.
+    3.  Returns `None` if either date is missing, unparseable, or `resolutiondate` < `created`.
+*   **Output Unit:** Configurable (default "days", float). Stored in `issue['lead_time']`, `issue['lead_time_unit']`.
+*   **Interpretation:** Overall responsiveness. Compare with Cycle Time to see queue/wait times.
 
 ### Metric 3: Throughput (Planned)
 *   **Purpose:** Rate of work completion.
-*   **Data Required:** `Resolution Date` OR `status_transitions` to identify entry into a 'Done' state.
-*   **Configuration Required (in `config.py`):**
-    *   `THROUGHPUT_DONE_STATUSES: list[str]` - List of Jira status names considered 'Done' for throughput. If empty, `resolutiondate` or `CYCLE_END_STATUSES` might be used as fallback (TBD).
-*   **Calculation:** Count of issues reaching a 'Done' state (per `THROUGHPUT_DONE_STATUSES` or `resolutiondate`) within a specific time period.
-    *   Handled in `data_processor.py` / `reporting.py` (planned).
+*   **Data Required:** `Resolution Date` OR `status_transitions`.
+*   **Configuration Required (in `config.py`):** `THROUGHPUT_DONE_STATUSES`.
+*   **Calculation:** Count of issues reaching a 'Done' state within a time period.
+    *   Handled in `src/data_processor.py` / `src/reporting.py` (planned).
 *   **Interpretation:** (As previously defined)
 
 ### Metric 4: Work In Progress (WIP) (Planned Feature)
 *   **Purpose:** Number of items actively being worked on.
-*   **Data Required:** Current `Status` of issues.
-*   **Configuration Required (in `config.py`):** Will likely use `CYCLE_START_STATUSES` and `CYCLE_END_STATUSES` or a separate WIP status list.
-*   **Calculation:** Count of issues currently in statuses considered 'active work'.
-    *   Handled in `data_processor.py` (planned).
+*   **Data Required:** Current `Status`. Configured 'active' statuses.
+*   **Calculation:** Count of issues in 'active' statuses.
+    *   Handled in `src/data_processor.py` (planned).
 *   **Interpretation:** (As previously defined)
 
 ## III. Aggregated Statuses / Outputs (If Applicable)
 
 ### Output Category 1: Cumulative Flow Diagram (CFD) Data (Planned Feature)
-*   **Purpose:** Visualize workflow.
+*   **Purpose:** To visualize workflow.
 *   **Data Required:** Parsed `status_transitions`.
 *   **Configuration Required (in `config.py`):** `CFD_COLUMN_MAPPING: dict[str, list[str]]`.
 *   **Aggregation Logic:** (As previously defined)
@@ -78,4 +71,4 @@ This document details the key data inputs, calculated metrics, and their interpr
 *   **Interpretation:** (As previously defined)
 
 ---
-*This document MUST be updated whenever new data sources are added, metrics are defined/modified, calculation logic changes, or configuration related to metrics (like status mappings, default fetched fields, or parsed data structures) is altered. Consistency between this document, `config.py`, and relevant Python modules is critical.*
+*This document MUST be updated whenever new data sources are added, metrics are defined/modified, calculation logic changes, or configuration related to metrics is altered. Consistency between this document, `config.py`, and relevant Python modules is critical.*
