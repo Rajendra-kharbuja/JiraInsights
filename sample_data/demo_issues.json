@@ -1,0 +1,156 @@
+[
+  {
+    "id": "10001",
+    "key": "DEMO-1",
+    "fields": {
+      "summary": "Improve checkout retry handling",
+      "issuetype": {
+        "name": "Story"
+      },
+      "status": {
+        "name": "Done"
+      },
+      "project": {
+        "key": "DEMO",
+        "name": "Demo Delivery Team"
+      },
+      "created": "2024-03-01T09:00:00.000+0000",
+      "resolutiondate": "2024-03-06T15:30:00.000+0000"
+    },
+    "status_transitions": [
+      {
+        "timestamp": "2024-03-01T09:00:00.000+0000",
+        "from_status": null,
+        "to_status": "Backlog"
+      },
+      {
+        "timestamp": "2024-03-04T09:30:00.000+0000",
+        "from_status": "Backlog",
+        "to_status": "In Progress"
+      },
+      {
+        "timestamp": "2024-03-05T13:00:00.000+0000",
+        "from_status": "In Progress",
+        "to_status": "Code Review"
+      },
+      {
+        "timestamp": "2024-03-06T15:30:00.000+0000",
+        "from_status": "Code Review",
+        "to_status": "Done"
+      }
+    ]
+  },
+  {
+    "id": "10002",
+    "key": "DEMO-2",
+    "fields": {
+      "summary": "Clarify invoice export acceptance criteria",
+      "issuetype": {
+        "name": "Task"
+      },
+      "status": {
+        "name": "Done"
+      },
+      "project": {
+        "key": "DEMO",
+        "name": "Demo Delivery Team"
+      },
+      "created": "2024-03-02T10:15:00.000+0000",
+      "resolutiondate": null
+    },
+    "status_transitions": [
+      {
+        "timestamp": "2024-03-02T10:15:00.000+0000",
+        "from_status": null,
+        "to_status": "To Do"
+      },
+      {
+        "timestamp": "2024-03-05T08:00:00.000+0000",
+        "from_status": "To Do",
+        "to_status": "In Progress"
+      },
+      {
+        "timestamp": "2024-03-07T11:45:00.000+0000",
+        "from_status": "In Progress",
+        "to_status": "Done"
+      }
+    ]
+  },
+  {
+    "id": "10003",
+    "key": "DEMO-3",
+    "fields": {
+      "summary": "Investigate intermittent notification failures",
+      "issuetype": {
+        "name": "Bug"
+      },
+      "status": {
+        "name": "In Progress"
+      },
+      "project": {
+        "key": "DEMO",
+        "name": "Demo Delivery Team"
+      },
+      "created": "2024-03-04T14:20:00.000+0000",
+      "resolutiondate": null
+    },
+    "status_transitions": [
+      {
+        "timestamp": "2024-03-04T14:20:00.000+0000",
+        "from_status": null,
+        "to_status": "To Do"
+      },
+      {
+        "timestamp": "2024-03-08T09:10:00.000+0000",
+        "from_status": "To Do",
+        "to_status": "In Progress"
+      }
+    ]
+  },
+  {
+    "id": "10004",
+    "key": "DEMO-4",
+    "fields": {
+      "summary": "Add product analytics event validation",
+      "issuetype": {
+        "name": "Story"
+      },
+      "status": {
+        "name": "Released"
+      },
+      "project": {
+        "key": "DEMO",
+        "name": "Demo Delivery Team"
+      },
+      "created": "2024-02-27T16:00:00.000+0000",
+      "resolutiondate": "2024-03-11T12:00:00.000+0000"
+    },
+    "status_transitions": [
+      {
+        "timestamp": "2024-02-27T16:00:00.000+0000",
+        "from_status": null,
+        "to_status": "Backlog"
+      },
+      {
+        "timestamp": "2024-03-01T10:00:00.000+0000",
+        "from_status": "Backlog",
+        "to_status": "In Progress"
+      },
+      {
+        "timestamp": "2024-03-04T15:00:00.000+0000",
+        "from_status": "In Progress",
+        "to_status": "Code Review"
+      },
+      {
+        "timestamp": "2024-03-06T09:00:00.000+0000",
+        "from_status": "Code Review",
+        "to_status": "Done"
+      },
+      {
+        "timestamp": "2024-03-11T12:00:00.000+0000",
+        "from_status": "Done",
+        "to_status": "Released"
+      }
+    ]
+  }
+]

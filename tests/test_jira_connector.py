@@ -2,25 +2,15 @@
 # Unit tests for the Jira API interaction logic in src/jira_connector.py.
 # Uses pytest, unittest.mock, and requests_mock.
 
-import sys
-print(f"DEBUG [test_jira_connector.py]: sys.path at import time = {sys.path}")
-
 import pytest
 from unittest.mock import patch, MagicMock
-import os
 import logging # Import logging for caplog.set_level
 import requests # <--- ADDED THIS IMPORT
 import base64 # <--- ADDED THIS IMPORT
 
 # Import the module and config to be tested/used
-try:
-    from src import jira_connector
-    import config
-    print("DEBUG [test_jira_connector.py]: Successfully imported 'src.jira_connector' and 'config'.")
-except ModuleNotFoundError as e:
-    print(f"ERROR [test_jira_connector.py]: Failed to import modules. Error: {e}")
-    print(f"Current sys.path: {sys.path}")
-    raise
+from src import jira_connector
+import config
 
 # --- Tests for load_credentials ---
 # (No changes to these tests)
@@ -31,7 +21,7 @@ def test_load_credentials_success(mock_os_getenv, mock_load_dotenv_call):
     mock_os_getenv.side_effect = lambda key: {
         "JIRA_URL": "https://test.atlassian.net/",
         "JIRA_EMAIL": "test@example.com",
-        "JIRA_PASSWORD": "test_password"
+        "JIRA_API_TOKEN": "test_api_token"
     }.get(key)
     with patch('src.jira_connector.find_dotenv', return_value='/fake/path/to/.env') as mock_find_dotenv_call:
         credentials = jira_connector.load_credentials()
@@ -40,7 +30,7 @@ def test_load_credentials_success(mock_os_getenv, mock_load_dotenv_call):
     assert credentials is not None
     assert credentials[0] == "https://test.atlassian.net"
     assert credentials[1] == "test@example.com"
-    assert credentials[2] == "test_password"
+    assert credentials[2] == "test_api_token"
 
 @patch('src.jira_connector.load_dotenv')
 @patch('os.getenv')
@@ -53,7 +43,7 @@ def test_load_credentials_missing_var(mock_os_getenv, mock_load_dotenv_call, cap
     with patch('src.jira_connector.find_dotenv', return_value=None):
         credentials = jira_connector.load_credentials()
     assert credentials is None
-    assert "JIRA_PASSWORD not found" in caplog.text
+    assert "JIRA_API_TOKEN not found" in caplog.text
     assert "Missing one or more required Jira credentials" in caplog.text
 
 @patch('src.jira_connector.load_dotenv')
@@ -63,7 +53,7 @@ def test_load_credentials_invalid_url(mock_os_getenv, mock_load_dotenv_call, cap
     mock_os_getenv.side_effect = lambda key: {
         "JIRA_URL": "invalid-url-format",
         "JIRA_EMAIL": "test@example.com",
-        "JIRA_PASSWORD": "test_password"
+        "JIRA_API_TOKEN": "test_api_token"
     }.get(key)
     with patch('src.jira_connector.find_dotenv', return_value='/fake/path/to/.env'):
         credentials = jira_connector.load_credentials()
@@ -78,8 +68,8 @@ def test_jira_connection_success(mock_load_credentials_call, requests_mock, capl
     """ Test successful Jira connection and authentication """
     mock_url = "https://test.atlassian.net"
     mock_email = "test@example.com"
-    mock_password = "test_password"
-    mock_load_credentials_call.return_value = (mock_url, mock_email, mock_password)
+    mock_api_token = "test_api_token"
+    mock_load_credentials_call.return_value = (mock_url, mock_email, mock_api_token)
 
     test_api_url = f"{mock_url}{config.JIRA_API_MYSELF_PATH}"
     mock_response_data = {"displayName": "Test User"}
@@ -93,13 +83,12 @@ def test_jira_connection_success(mock_load_credentials_call, requests_mock, capl
     # Check the specific part of the log message we care about
     assert f"Attempting to connect to Jira at {mock_url}" in caplog.text
     assert f"Authenticated as: Test User ({mock_email})" in caplog.text
-    # Verify Basic Authentication header
+    # Verify Jira email/API-token authentication header.
     assert requests_mock.called_once # Ensure the mock was called
     last_request = requests_mock.last_request
     assert last_request is not None # Should not be None if called_once is True
     
-    # Construct the expected Basic Auth header
-    auth_string = f"{mock_email}:{mock_password}"
+    auth_string = f"{mock_email}:{mock_api_token}"
     expected_auth_header = f"Basic {base64.b64encode(auth_string.encode('utf-8')).decode('utf-8')}"
     
     assert 'Authorization' in last_request.headers
@@ -111,8 +100,8 @@ def test_jira_connection_auth_failure_401(mock_load_credentials_call, requests_m
     """ Test connection failure due to 401 Unauthorized """
     mock_url = "https://test.atlassian.net"
     mock_email = "wrong@example.com"
-    mock_password = "wrong_password"
-    mock_load_credentials_call.return_value = (mock_url, mock_email, mock_password)
+    mock_api_token = "wrong_api_token"
+    mock_load_credentials_call.return_value = (mock_url, mock_email, mock_api_token)
 
     test_api_url = f"{mock_url}{config.JIRA_API_MYSELF_PATH}"
     requests_mock.get(test_api_url, status_code=401, reason="Unauthorized")
@@ -122,7 +111,7 @@ def test_jira_connection_auth_failure_401(mock_load_credentials_call, requests_m
 
     assert result is False
     assert "Authentication Failed (401 Unauthorized)" in caplog.text
-    assert f"Invalid email or password for user '{mock_email}'" in caplog.text
+    assert f"Invalid email or API token for user '{mock_email}'" in caplog.text
 
 
 @patch('src.jira_connector.load_credentials')
@@ -130,8 +119,8 @@ def test_jira_connection_forbidden_403(mock_load_credentials_call, requests_mock
     """ Test connection failure due to 403 Forbidden """
     mock_url = "https://test.atlassian.net"
     mock_email = "no_perms@example.com"
-    mock_password = "test_password"
-    mock_load_credentials_call.return_value = (mock_url, mock_email, mock_password)
+    mock_api_token = "test_api_token"
+    mock_load_credentials_call.return_value = (mock_url, mock_email, mock_api_token)
 
     test_api_url = f"{mock_url}{config.JIRA_API_MYSELF_PATH}"
     requests_mock.get(test_api_url, status_code=403, reason="Forbidden")
@@ -148,8 +137,8 @@ def test_jira_connection_not_found_404(mock_load_credentials_call, requests_mock
     """ Test connection failure due to 404 Not Found """
     mock_url = "https://test.atlassian.net"
     mock_email = "test@example.com"
-    mock_password = "test_password"
-    mock_load_credentials_call.return_value = (mock_url, mock_email, mock_password)
+    mock_api_token = "test_api_token"
+    mock_load_credentials_call.return_value = (mock_url, mock_email, mock_api_token)
 
     test_api_url = f"{mock_url}{config.JIRA_API_MYSELF_PATH}"
     requests_mock.get(test_api_url, status_code=404, reason="Not Found")
@@ -166,8 +155,8 @@ def test_jira_connection_server_error_500(mock_load_credentials_call, requests_m
     """ Test connection failure due to 500 Internal Server Error """
     mock_url = "https://test.atlassian.net"
     mock_email = "test@example.com"
-    mock_password = "test_password"
-    mock_load_credentials_call.return_value = (mock_url, mock_email, mock_password)
+    mock_api_token = "test_api_token"
+    mock_load_credentials_call.return_value = (mock_url, mock_email, mock_api_token)
 
     test_api_url = f"{mock_url}{config.JIRA_API_MYSELF_PATH}"
     requests_mock.get(test_api_url, status_code=500, reason="Internal Server Error")
@@ -184,8 +173,8 @@ def test_jira_connection_connection_error(mock_load_credentials_call, requests_m
     """ Test connection failure due to requests.exceptions.ConnectionError """
     mock_url = "https://nonexistent-jira-instance.com"
     mock_email = "test@example.com"
-    mock_password = "test_password"
-    mock_load_credentials_call.return_value = (mock_url, mock_email, mock_password)
+    mock_api_token = "test_api_token"
+    mock_load_credentials_call.return_value = (mock_url, mock_email, mock_api_token)
 
     test_api_url = f"{mock_url}{config.JIRA_API_MYSELF_PATH}"
     # Use the imported requests module here
@@ -203,8 +192,8 @@ def test_jira_connection_timeout(mock_load_credentials_call, requests_mock, capl
     """ Test connection failure due to requests.exceptions.Timeout """
     mock_url = "https://slow-jira.com"
     mock_email = "test@example.com"
-    mock_password = "test_password"
-    mock_load_credentials_call.return_value = (mock_url, mock_email, mock_password)
+    mock_api_token = "test_api_token"
+    mock_load_credentials_call.return_value = (mock_url, mock_email, mock_api_token)
 
     test_api_url = f"{mock_url}{config.JIRA_API_MYSELF_PATH}"
     # Use the imported requests module here
@@ -234,8 +223,8 @@ def test_fetch_issues_single_page_success(mock_load_credentials_call, requests_m
     """Test fetching issues that fit on a single page."""
     mock_url = "https://test.jira.com"
     mock_email = "user@test.com"
-    mock_password = "password"
-    mock_load_credentials_call.return_value = (mock_url, mock_email, mock_password)
+    mock_api_token = "api_token"
+    mock_load_credentials_call.return_value = (mock_url, mock_email, mock_api_token)
 
     jql = "project = TEST"
     expected_fields_str = ",".join(config.DEFAULT_JIRA_FIELDS_TO_FETCH)
@@ -259,9 +248,6 @@ def test_fetch_issues_single_page_success(mock_load_credentials_call, requests_m
     assert issues[0]["key"] == "TEST-1"
     assert requests_mock.called_once
     
-    # Debug print to see exactly what requests_mock captured
-    print(f"DEBUG: Captured Query String from requests_mock: {requests_mock.last_request.qs}")
-
     assert requests_mock.last_request.qs['jql'][0].lower() == jql.lower() # Case-insensitive comparison
     assert requests_mock.last_request.qs['fields'] == [expected_fields_str]
     assert requests_mock.last_request.qs['startat'] == ['0'] # qs values are lists of strings
@@ -273,8 +259,8 @@ def test_fetch_issues_multiple_pages_success(mock_load_credentials_call, request
     """Test fetching issues that span multiple pages."""
     mock_url = "https://test.jira.com"
     mock_email = "user@test.com"
-    mock_password = "password"
-    mock_load_credentials_call.return_value = (mock_url, mock_email, mock_password)
+    mock_api_token = "api_token"
+    mock_load_credentials_call.return_value = (mock_url, mock_email, mock_api_token)
 
     jql = "project = MULTI"
     search_url_matcher = f"{mock_url}{config.JIRA_API_SEARCH_PATH}"
@@ -617,8 +603,8 @@ def test_fetch_issues_includes_changelog_data_and_parses(mock_load_credentials_c
     """Test that fetch_issues_by_jql requests and processes changelog when include_changelog=True."""
     mock_url = "https://test.jira.com"
     mock_email = "user@test.com"
-    mock_password = "password"
-    mock_load_credentials_call.return_value = (mock_url, mock_email, mock_password)
+    mock_api_token = "api_token"
+    mock_load_credentials_call.return_value = (mock_url, mock_email, mock_api_token)
     jql = "project = CL_TEST"
     search_url_matcher = f"{mock_url}{config.JIRA_API_SEARCH_PATH}"
 

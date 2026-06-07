@@ -1,8 +1,6 @@
 # config.py
 # Holds non-sensitive configuration settings, constants, and mappings for Jira Insights.
 
-print("INFO [config.py]: config.py loaded/parsed.") # Diagnostic print
-
 # --- Jira Workflow Status Mappings (USER CONFIGURATION REQUIRED) ---
 # These lists define which of YOUR Jira workflow statuses map to key points for metric calculations.
 # You MUST update these lists with the exact names of your Jira statuses.
@@ -34,13 +32,24 @@ CYCLE_END_STATUSES: list[str] = [
 # (i.e., number of items finished per unit of time).
 # This might be the same as CYCLE_END_STATUSES, or it could be a more final set of statuses
 # (e.g., if Cycle End is "Ready for Release" but Throughput measures "Released" or "Done").
-# If this list is empty, the system might default to using `resolutiondate` for throughput,
-# or it might use CYCLE_END_STATUSES if `resolutiondate` is unreliable. This behavior will be
-# confirmed when throughput calculation (FEAT-007) is implemented.
+# Throughput calculation uses `fields.resolutiondate` first. If `resolutiondate` is missing
+# or invalid, the calculation falls back to the first status transition into one of these
+# configured statuses. If this list is empty, only `resolutiondate` is used.
 # Example: THROUGHPUT_DONE_STATUSES = ["Closed", "Done", "Released"]
 THROUGHPUT_DONE_STATUSES: list[str] = [
     # "Example: Done",
     # "Example: Released to Production"
+]
+
+# WIP SNAPSHOT CONFIGURATION:
+# Define statuses that represent active work currently in progress.
+# The WIP snapshot counts issues whose current Jira status is in this list.
+# These are usually statuses between backlog/refinement and final done.
+# Example: WIP_STATUSES = ["In Progress", "Code Review", "In QA"]
+WIP_STATUSES: list[str] = [
+    # "Example: In Progress",
+    # "Example: Code Review",
+    # "Example: In QA"
 ]
 
 
@@ -74,6 +83,9 @@ JIRA_API_MYSELF_PATH = "/rest/api/3/myself"      # Used by jira_connector for te
 
 # --- Default Application Settings ---
 DEFAULT_OUTPUT_FILENAME = "jira_insights_output.csv" # Default filename for CSV exports (FEAT-008)
+
+# Default offline demo dataset. This file is committed and contains no secrets.
+DEFAULT_SAMPLE_DATA_PATH = "sample_data/demo_issues.json"
 
 # Default max results per API page request when fetching issues from Jira.
 # Jira's own default is usually 50. The absolute maximum is often 100.

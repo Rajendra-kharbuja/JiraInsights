@@ -49,7 +49,8 @@ coverage.xml
 .pytest_cache/
 
 # Environments
-.env # IMPORTANT: Ignore the actual .env file with secrets
+# IMPORTANT: Ignore the actual .env file with secrets.
+.env
 .venv
 env/
 venv/ # Standard name for virtual environment directory
@@ -80,3 +81,8 @@ Thumbs.db # Windows
 
 # Local settings files (if any)
 # local_settings.py
+
+# Local assistant/project guidance that should stay private to this workspace
+AGENTS.md
+agents/
+task_briefs/

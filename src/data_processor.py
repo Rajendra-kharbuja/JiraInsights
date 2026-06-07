@@ -5,7 +5,9 @@ from typing import List, Dict, Any, Optional, Union # Added timedelta, Union
 try:
     import config
 except ImportError:
-    print("ERROR [data_processor.py]: Could not import 'config'. Ensure project root is in PYTHONPATH.")
+    logging.getLogger(__name__).error(
+        "Could not import 'config'. Ensure project root is in PYTHONPATH."
+    )
     # Fallback for testing if config is not found, though tests should mock/set config attributes
     class MockConfig: # Define a mock config for basic functionality if import fails
         CYCLE_START_STATUSES = []
@@ -15,12 +17,32 @@ except ImportError:
 import logging
 
 logger = logging.getLogger(__name__)
-if not logger.handlers:
-    handler = logging.StreamHandler()
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-    handler.setFormatter(formatter)
-    logger.addHandler(handler)
-    logger.setLevel(logging.DEBUG)
+
+
+WARNING_MISSING_RESOLUTION_DATE = "MISSING_RESOLUTION_DATE"
+WARNING_MISSING_CYCLE_START = "MISSING_CYCLE_START"
+WARNING_MISSING_CYCLE_END = "MISSING_CYCLE_END"
+WARNING_INVALID_CREATED_TIMESTAMP = "INVALID_CREATED_TIMESTAMP"
+WARNING_INVALID_RESOLUTION_TIMESTAMP = "INVALID_RESOLUTION_TIMESTAMP"
+WARNING_INVALID_TRANSITION_TIMESTAMP = "INVALID_TRANSITION_TIMESTAMP"
+WARNING_EMPTY_CYCLE_START_STATUSES = "EMPTY_CYCLE_START_STATUSES"
+WARNING_EMPTY_CYCLE_END_STATUSES = "EMPTY_CYCLE_END_STATUSES"
+WARNING_EMPTY_THROUGHPUT_DONE_STATUSES = "EMPTY_THROUGHPUT_DONE_STATUSES"
+WARNING_RESOLUTION_BEFORE_CREATED = "RESOLUTION_BEFORE_CREATED"
+
+
+def _build_warning(
+    issue_key: str,
+    code: str,
+    message: str,
+    severity: str = "warning",
+) -> Dict[str, str]:
+    return {
+        "issue_key": issue_key,
+        "code": code,
+        "message": message,
+        "severity": severity,
+    }
 
 
 def _parse_iso_datetime(timestamp_str: Optional[str]) -> Optional[datetime]:
@@ -100,21 +122,21 @@ def calculate_lead_time(
 ) -> Optional[float]:
     """Calculates lead time."""
     if not created_timestamp_str:
-        logger.debug("LT: Created timestamp missing.")
+        logger.debug("LT: Created timestamp is missing.")
         return None
     if not resolved_timestamp_str:
-        logger.debug("LT: Resolved timestamp missing.")
+        logger.debug("LT: Resolved timestamp is missing.")
         return None
     created_dt = _parse_iso_datetime(created_timestamp_str)
     resolved_dt = _parse_iso_datetime(resolved_timestamp_str)
     if not created_dt:
-        logger.warning(f"LT: Failed to parse created_timestamp '{created_timestamp_str}'.")
+        logger.warning(f"LT: Failed to parse created timestamp '{created_timestamp_str}'.")
         return None
     if not resolved_dt:
-        logger.warning(f"LT: Failed to parse resolved_timestamp '{resolved_timestamp_str}'.")
+        logger.warning(f"LT: Failed to parse resolved timestamp '{resolved_timestamp_str}'.")
         return None
     if resolved_dt < created_dt:
-        logger.warning(f"LT calc: Resolved time ({resolved_dt.isoformat()}) before created time ({created_dt.isoformat()}). Invalid.")
+        logger.warning(f"LT calc: Resolved time ({resolved_dt.isoformat()}) is before created time ({created_dt.isoformat()}). Invalid.")
         return None
     duration_timedelta: timedelta = resolved_dt - created_dt
     duration_seconds: float = duration_timedelta.total_seconds()
@@ -124,6 +146,121 @@ def calculate_lead_time(
     if output_unit == "seconds": return duration_seconds
     logger.error(f"Invalid output_unit for lead time: '{output_unit}'. Defaulting to days.")
     return duration_seconds / (60 * 60 * 24)
+
+
+def build_data_quality_warnings(
+    issue_data: Dict[str, Any],
+    cycle_start_statuses: Optional[List[str]] = None,
+    cycle_end_statuses: Optional[List[str]] = None,
+    throughput_done_statuses: Optional[List[str]] = None,
+) -> List[Dict[str, str]]:
+    """
+    Builds structured data-quality warning records for one processed issue.
+
+    Args:
+        issue_data: A single Jira-like issue dictionary.
+        cycle_start_statuses: Configured statuses that mark cycle-time start.
+        cycle_end_statuses: Configured statuses that mark cycle-time end.
+        throughput_done_statuses: Configured statuses that mark throughput done.
+
+    Returns:
+        A list of stable warning dictionaries.
+    """
+    issue_key = str(issue_data.get("key", "N/A_KEY"))
+    fields = issue_data.get("fields", {}) or {}
+    status_transitions = issue_data.get("status_transitions", []) or []
+    warnings: List[Dict[str, str]] = []
+
+    created_str = fields.get("created")
+    resolution_str = fields.get("resolutiondate")
+    created_dt = _parse_iso_datetime(created_str)
+    resolution_dt = _parse_iso_datetime(resolution_str)
+
+    if created_str and created_dt is None:
+        warnings.append(_build_warning(
+            issue_key,
+            WARNING_INVALID_CREATED_TIMESTAMP,
+            "Created timestamp is invalid; lead time cannot be trusted.",
+        ))
+    if not resolution_str:
+        warnings.append(_build_warning(
+            issue_key,
+            WARNING_MISSING_RESOLUTION_DATE,
+            "Resolution date is missing; lead time and completion detection may be limited.",
+        ))
+    elif resolution_dt is None:
+        warnings.append(_build_warning(
+            issue_key,
+            WARNING_INVALID_RESOLUTION_TIMESTAMP,
+            "Resolution date is invalid; lead time and completion detection may be limited.",
+        ))
+    if created_dt and resolution_dt and resolution_dt < created_dt:
+        warnings.append(_build_warning(
+            issue_key,
+            WARNING_RESOLUTION_BEFORE_CREATED,
+            "Resolution date is before created date; lead time is logically inconsistent.",
+        ))
+
+    for transition in status_transitions:
+        timestamp_str = transition.get("timestamp")
+        if timestamp_str and _parse_iso_datetime(timestamp_str) is None:
+            warnings.append(_build_warning(
+                issue_key,
+                WARNING_INVALID_TRANSITION_TIMESTAMP,
+                "A status transition timestamp is invalid; cycle time may be incomplete.",
+            ))
+            break
+
+    if not cycle_start_statuses:
+        warnings.append(_build_warning(
+            issue_key,
+            WARNING_EMPTY_CYCLE_START_STATUSES,
+            "Cycle start statuses are not configured; cycle time cannot be calculated.",
+        ))
+    if not cycle_end_statuses:
+        warnings.append(_build_warning(
+            issue_key,
+            WARNING_EMPTY_CYCLE_END_STATUSES,
+            "Cycle end statuses are not configured; cycle time cannot be calculated.",
+        ))
+    if not throughput_done_statuses:
+        warnings.append(_build_warning(
+            issue_key,
+            WARNING_EMPTY_THROUGHPUT_DONE_STATUSES,
+            "Throughput done statuses are not configured; status-based completion fallback is disabled.",
+        ))
+
+    if cycle_start_statuses and cycle_end_statuses:
+        cycle_start_time = None
+        for transition in status_transitions:
+            transition_time = _parse_iso_datetime(transition.get("timestamp"))
+            to_status = transition.get("to_status")
+            if cycle_start_time is None and to_status in cycle_start_statuses:
+                if transition_time:
+                    cycle_start_time = transition_time
+                continue
+            if (
+                cycle_start_time is not None
+                and transition_time
+                and transition_time >= cycle_start_time
+                and to_status in cycle_end_statuses
+            ):
+                break
+        else:
+            if cycle_start_time is None:
+                warnings.append(_build_warning(
+                    issue_key,
+                    WARNING_MISSING_CYCLE_START,
+                    "No cycle start transition was found; cycle time cannot be calculated.",
+                ))
+            else:
+                warnings.append(_build_warning(
+                    issue_key,
+                    WARNING_MISSING_CYCLE_END,
+                    "No cycle end transition was found after cycle start; cycle time is incomplete.",
+                ))
+
+    return warnings
 
 # --- NEW HELPER FUNCTION ---
 def get_completion_date(
@@ -183,6 +320,70 @@ def get_completion_date(
     logger.debug(f"Issue {issue_key}: No completion date found based on available criteria.")
     return None
 
+
+def _current_status_name(issue_data: Dict[str, Any]) -> Optional[str]:
+    fields = issue_data.get("fields", {}) or {}
+    status = fields.get("status")
+    if isinstance(status, dict):
+        status_name = status.get("name")
+        return str(status_name) if status_name is not None else None
+    if status is None:
+        return None
+    return str(status)
+
+
+def calculate_wip_snapshot(
+    issues_data: List[Dict[str, Any]],
+    wip_statuses: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """
+    Calculates a current work-in-progress snapshot from issue statuses.
+
+    Args:
+        issues_data: A list of issue dictionaries.
+        wip_statuses: Status names considered active WIP. If None, uses
+            config.WIP_STATUSES.
+
+    Returns:
+        A deterministic dictionary containing the WIP count, configured statuses,
+        matching issue summaries, and counts grouped by current status.
+    """
+    if wip_statuses is None:
+        configured_statuses = getattr(config, "WIP_STATUSES", None)
+    else:
+        configured_statuses = wip_statuses
+
+    if configured_statuses is not None and not isinstance(configured_statuses, list):
+        logger.warning("WIP_STATUSES is defined but not a list. WIP snapshot will be empty.")
+        configured_statuses = []
+
+    active_statuses = [str(status) for status in (configured_statuses or [])]
+    if not active_statuses:
+        logger.warning("WIP statuses are empty. WIP snapshot will be 0.")
+
+    active_status_set = set(active_statuses)
+    active_issues: List[Dict[str, Any]] = []
+    status_counts: Dict[str, int] = {}
+
+    for issue in issues_data:
+        status_name = _current_status_name(issue)
+        if status_name in active_status_set:
+            active_issues.append({
+                "key": issue.get("key"),
+                "summary": (issue.get("fields") or {}).get("summary"),
+                "status": status_name,
+            })
+            status_counts[status_name] = status_counts.get(status_name, 0) + 1
+
+    active_issues.sort(key=lambda item: (item.get("status") or "", item.get("key") or ""))
+
+    return {
+        "count": len(active_issues),
+        "statuses": active_statuses,
+        "issues": active_issues,
+        "status_counts": dict(sorted(status_counts.items())),
+    }
+
 # --- NEW FUNCTION ---
 def calculate_throughput_for_period(
     issues_data: List[Dict[str, Any]],
@@ -238,12 +439,13 @@ def process_issues_for_metrics(
     """Processes issues to add cycle time and lead time metrics."""
     cfg_cycle_start = getattr(config, 'CYCLE_START_STATUSES', None)
     cfg_cycle_end = getattr(config, 'CYCLE_END_STATUSES', None)
+    cfg_throughput_done_statuses = getattr(config, 'THROUGHPUT_DONE_STATUSES', None)
     can_calc_cycle_time = True
     if cfg_cycle_start is None or cfg_cycle_end is None:
-        logger.error("CT Config: CYCLE_START_STATUSES or CYCLE_END_STATUSES not in config.")
+        logger.error("CT Config: CYCLE_START_STATUSES or CYCLE_END_STATUSES not found in config.")
         can_calc_cycle_time = False
     elif not cfg_cycle_start or not cfg_cycle_end:
-        logger.warning("CT Config: CYCLE_START_STATUSES or CYCLE_END_STATUSES empty. CT not calculated.")
+        logger.warning("CT Config: CYCLE_START_STATUSES or CYCLE_END_STATUSES are empty in config. CT not calculated.")
         can_calc_cycle_time = False
     
     for issue in issues_data:
@@ -269,6 +471,13 @@ def process_issues_for_metrics(
         )
         issue["lead_time"] = lead_time
         issue["lead_time_unit"] = lead_time_output_unit if lead_time is not None else None
+        issue["data_quality_warnings"] = build_data_quality_warnings(
+            issue,
+            cfg_cycle_start if isinstance(cfg_cycle_start, list) else [],
+            cfg_cycle_end if isinstance(cfg_cycle_end, list) else [],
+            cfg_throughput_done_statuses
+            if isinstance(cfg_throughput_done_statuses, list) else [],
+        )
             
     return issues_data
 

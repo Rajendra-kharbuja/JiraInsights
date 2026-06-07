@@ -1,4 +1,6 @@
 # tests/test_data_processor.py
+import logging
+
 import pytest
 from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Any, Optional
@@ -195,6 +197,81 @@ def test_process_issues_empty_config_statuses(monkeypatch, caplog): # Removed se
     
     assert "CYCLE_START_STATUSES or CYCLE_END_STATUSES are empty in config" in caplog.text
     assert processed[0]["cycle_time"] is None
+
+
+def test_process_issues_adds_structured_data_quality_warnings(monkeypatch):
+    monkeypatch.setattr(config, "CYCLE_START_STATUSES", ["In Progress"])
+    monkeypatch.setattr(config, "CYCLE_END_STATUSES", ["Done"])
+    monkeypatch.setattr(config, "THROUGHPUT_DONE_STATUSES", ["Done"])
+    issues_data = [{
+        "key": "WARN-1",
+        "fields": {
+            "created": "2024-03-01T00:00:00Z",
+            "resolutiondate": None,
+        },
+        "status_transitions": [
+            create_transition("2024-03-02T00:00:00Z", "To Do", "In Progress"),
+        ],
+    }]
+
+    processed = data_processor.process_issues_for_metrics(issues_data)
+    warning_codes = {
+        warning["code"] for warning in processed[0]["data_quality_warnings"]
+    }
+
+    assert data_processor.WARNING_MISSING_RESOLUTION_DATE in warning_codes
+    assert data_processor.WARNING_MISSING_CYCLE_END in warning_codes
+    assert all(warning["issue_key"] == "WARN-1" for warning in processed[0]["data_quality_warnings"])
+
+
+def test_build_data_quality_warnings_detects_invalid_and_inconsistent_dates():
+    issue = {
+        "key": "WARN-2",
+        "fields": {
+            "created": "2024-03-05T00:00:00Z",
+            "resolutiondate": "2024-03-01T00:00:00Z",
+        },
+        "status_transitions": [
+            create_transition("not-a-date", "To Do", "In Progress"),
+        ],
+    }
+
+    warnings = data_processor.build_data_quality_warnings(
+        issue,
+        cycle_start_statuses=["In Progress"],
+        cycle_end_statuses=["Done"],
+        throughput_done_statuses=["Done"],
+    )
+    warning_codes = {warning["code"] for warning in warnings}
+
+    assert data_processor.WARNING_RESOLUTION_BEFORE_CREATED in warning_codes
+    assert data_processor.WARNING_INVALID_TRANSITION_TIMESTAMP in warning_codes
+    assert data_processor.WARNING_MISSING_CYCLE_START in warning_codes
+
+
+def test_build_data_quality_warnings_detects_empty_status_configuration():
+    issue = {
+        "key": "WARN-3",
+        "fields": {
+            "created": "bad-created",
+            "resolutiondate": "bad-resolution",
+        },
+        "status_transitions": [],
+    }
+
+    warnings = data_processor.build_data_quality_warnings(
+        issue,
+        cycle_start_statuses=[],
+        cycle_end_statuses=[],
+        throughput_done_statuses=[],
+    )
+    warning_codes = {warning["code"] for warning in warnings}
+
+    assert data_processor.WARNING_INVALID_CREATED_TIMESTAMP in warning_codes
+    assert data_processor.WARNING_INVALID_RESOLUTION_TIMESTAMP in warning_codes
+    assert data_processor.WARNING_EMPTY_CYCLE_START_STATUSES in warning_codes
+    assert data_processor.WARNING_EMPTY_CYCLE_END_STATUSES in warning_codes
+    assert data_processor.WARNING_EMPTY_THROUGHPUT_DONE_STATUSES in warning_codes
 # --- Tests for calculate_lead_time ---
 class TestCalculateLeadTime:
     def test_happy_path_days(self):
@@ -222,11 +299,13 @@ class TestCalculateLeadTime:
         assert lt == pytest.approx(30.0 / (24 * 60)) # 0.5 hours / 24
 
     def test_missing_created_timestamp(self, caplog):
+        caplog.set_level(logging.DEBUG, logger=data_processor.__name__)
         lt = data_processor.calculate_lead_time(None, "2023-01-05T10:00:00Z")
         assert lt is None
         assert "Created timestamp is missing" in caplog.text
 
     def test_missing_resolved_timestamp(self, caplog):
+        caplog.set_level(logging.DEBUG, logger=data_processor.__name__)
         lt = data_processor.calculate_lead_time("2023-01-01T10:00:00Z", None)
         assert lt is None
         assert "Resolved timestamp is missing" in caplog.text
@@ -537,3 +616,75 @@ class TestCalculateThroughputForPeriod:
         
         assert data_processor.calculate_throughput_for_period(issues, start_dt, end_dt) == 1
         assert "config.THROUGHPUT_DONE_STATUSES is defined but not a list" in caplog.text
+
+
+class TestCalculateWipSnapshot:
+    def _create_issue(self, key, status=None, summary=None):
+        fields = {"summary": summary or f"Summary for {key}"}
+        if status is not None:
+            fields["status"] = {"name": status}
+        return {"key": key, "fields": fields}
+
+    def test_counts_current_active_statuses(self):
+        issues = [
+            self._create_issue("WIP-1", "In Progress"),
+            self._create_issue("WIP-2", "Code Review"),
+            self._create_issue("DONE-1", "Done"),
+        ]
+
+        snapshot = data_processor.calculate_wip_snapshot(
+            issues,
+            wip_statuses=["In Progress", "Code Review"],
+        )
+
+        assert snapshot["count"] == 2
+        assert snapshot["statuses"] == ["In Progress", "Code Review"]
+        assert snapshot["status_counts"] == {"Code Review": 1, "In Progress": 1}
+        assert [issue["key"] for issue in snapshot["issues"]] == ["WIP-2", "WIP-1"]
+
+    def test_uses_configured_wip_statuses(self, monkeypatch):
+        monkeypatch.setattr(config, "WIP_STATUSES", ["In QA"])
+        issues = [
+            self._create_issue("WIP-1", "In QA"),
+            self._create_issue("TODO-1", "To Do"),
+        ]
+
+        snapshot = data_processor.calculate_wip_snapshot(issues)
+
+        assert snapshot["count"] == 1
+        assert snapshot["issues"][0]["key"] == "WIP-1"
+
+    def test_handles_missing_status(self):
+        issues = [
+            self._create_issue("WIP-1", "In Progress"),
+            {"key": "NO-FIELDS"},
+            {"key": "NO-STATUS", "fields": {}},
+        ]
+
+        snapshot = data_processor.calculate_wip_snapshot(
+            issues,
+            wip_statuses=["In Progress"],
+        )
+
+        assert snapshot["count"] == 1
+        assert snapshot["status_counts"] == {"In Progress": 1}
+
+    def test_empty_wip_statuses_returns_zero_and_logs_warning(self, caplog):
+        issues = [self._create_issue("WIP-1", "In Progress")]
+
+        snapshot = data_processor.calculate_wip_snapshot(issues, wip_statuses=[])
+
+        assert snapshot["count"] == 0
+        assert snapshot["issues"] == []
+        assert "WIP statuses are empty" in caplog.text
+
+    def test_non_dict_status_values_are_supported(self):
+        issues = [{"key": "WIP-1", "fields": {"status": "In Progress"}}]
+
+        snapshot = data_processor.calculate_wip_snapshot(
+            issues,
+            wip_statuses=["In Progress"],
+        )
+
+        assert snapshot["count"] == 1
+        assert snapshot["issues"][0]["status"] == "In Progress"

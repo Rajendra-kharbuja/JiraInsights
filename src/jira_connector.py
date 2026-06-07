@@ -1,67 +1,62 @@
 # src/jira_connector.py
-# Handles connection and data fetching from the Jira API using Basic Authentication.
+# Handles connection and data fetching from the Jira API using an API token.
 
 import os
-import sys
 import requests
 import logging
 from dotenv import load_dotenv, find_dotenv
 from typing import Optional, Tuple, List, Dict, Any
 
-# config.py is at the project root and pytest runs from root, adding it to sys.path
-print(f"DEBUG [jira_connector.py]: sys.path at import time = {sys.path}")
 try:
     import config
-    print("DEBUG [jira_connector.py]: Successfully imported 'config'.")
 except ModuleNotFoundError as e:
-    print(f"ERROR [jira_connector.py]: Failed to import 'config'. Error: {e}")
+    logging.getLogger(__name__).error("Failed to import 'config'. Error: %s", e)
     raise
 
-# Basic logging configuration
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(module)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 def load_credentials() -> Optional[Tuple[str, str, str]]:
-    """Loads Jira URL, email, and password from the .env file."""
+    """Loads Jira URL, email, and API token from the .env file."""
     env_path = find_dotenv(raise_error_if_not_found=False)
     if env_path:
-        print(f"DEBUG [jira_connector.py]: Loading .env from: {env_path}")
+        logger.debug("Loading .env from: %s", env_path)
         load_dotenv(dotenv_path=env_path)
     else:
-        print("DEBUG [jira_connector.py]: .env file not found by find_dotenv(). Relying on os.getenv directly.")
+        logger.debug(".env file not found by find_dotenv(). Relying on os.getenv directly.")
 
     jira_url = os.getenv("JIRA_URL")
     jira_email = os.getenv("JIRA_EMAIL")
-    jira_password = os.getenv("JIRA_PASSWORD")
+    jira_api_token = os.getenv("JIRA_API_TOKEN")
 
     if not jira_url:
         logging.error("JIRA_URL not found or is empty in environment variables / .env file.")
     if not jira_email:
         logging.error("JIRA_EMAIL not found or is empty in environment variables / .env file.")
-    if not jira_password:
-        logging.error("JIRA_PASSWORD not found or is empty in environment variables / .env file.")
+    if not jira_api_token:
+        logging.error("JIRA_API_TOKEN not found or is empty in environment variables / .env file.")
 
-    if not all([jira_url, jira_email, jira_password]):
+    if not all([jira_url, jira_email, jira_api_token]):
         logging.error("Missing one or more required Jira credentials.")
         return None
 
     if not jira_url.startswith(('http://', 'https://')):
          logging.error(f"Invalid JIRA_URL format: '{jira_url}'. Must start with http:// or https://")
          return None
-    return jira_url.rstrip('/'), jira_email, jira_password
+    return jira_url.rstrip('/'), jira_email, jira_api_token
 
 
 def test_jira_connection() -> bool:
-    """Tests the connection and authentication to the Jira API using Basic Auth."""
+    """Tests the connection and authentication to the Jira API using an API token."""
     credentials = load_credentials()
     if not credentials:
         return False
-    jira_url, jira_email, jira_password = credentials
+    jira_url, jira_email, jira_api_token = credentials
     test_endpoint = config.JIRA_API_MYSELF_PATH
     test_url = f"{jira_url}{test_endpoint}"
-    logging.info(f"Attempting to connect to Jira at {jira_url} using Basic Auth as {jira_email}...")
+    logging.info(f"Attempting to connect to Jira at {jira_url} using API token auth as {jira_email}...")
     try:
         response = requests.get(
-            test_url, auth=(jira_email, jira_password),
+            test_url, auth=(jira_email, jira_api_token),
             headers={"Accept": "application/json", "Content-Type": "application/json"}, timeout=15
         )
         response.raise_for_status()
@@ -79,9 +74,9 @@ def test_jira_connection() -> bool:
         status_code = e.response.status_code
         error_text = e.response.text # Get more detailed error from Jira
         if status_code == 401:
-            logging.error(f"Authentication Failed (401 Unauthorized): Invalid email or password for user '{jira_email}'. Response: {error_text}")
+            logging.error(f"Authentication Failed (401 Unauthorized): Invalid email or API token for user '{jira_email}'. Response: {error_text}")
         elif status_code == 403:
-            logging.error(f"Authorization Failed (403 Forbidden): User '{jira_email}' may lack permissions, CAPTCHA, or Basic Auth restricted. Response: {error_text}")
+            logging.error(f"Authorization Failed (403 Forbidden): User '{jira_email}' may lack permissions, CAPTCHA, or API token authentication may be restricted. Response: {error_text}")
         elif status_code == 404:
             logging.error(f"API Endpoint Not Found (404): Check JIRA_URL ('{jira_url}') and API path ('{test_endpoint}'). Response: {error_text}")
         else:
@@ -185,7 +180,7 @@ def fetch_issues_by_jql(
     if not credentials:
         return None
 
-    jira_url, jira_email, jira_password = credentials
+    jira_url, jira_email, jira_api_token = credentials
     search_url = f"{jira_url}{config.JIRA_API_SEARCH_PATH}"
 
     if fields is None:
@@ -218,7 +213,7 @@ def fetch_issues_by_jql(
         try:
             response = requests.get(
                 search_url,
-                auth=(jira_email, jira_password),
+                auth=(jira_email, jira_api_token),
                 headers={"Accept": "application/json", "Content-Type": "application/json"},
                 params=request_params,
                 timeout=30
